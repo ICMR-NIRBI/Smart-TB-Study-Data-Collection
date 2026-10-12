@@ -392,8 +392,7 @@ export function LoginView() {
             </span>
             <h2 className="mt-6 text-[44px] font-bold leading-[1.08] tracking-tight text-white xl:text-[52px]">Precision dosing begins with precise data.</h2>
             <p className="mt-6 max-w-[440px] text-[17px] leading-relaxed text-white/80">
-              Secure, mobile-first case report forms for the SMART-TB study of first-line anti-TB therapy, from screening and Day-8 intensive sampling to the Month-2
-              outcome.
+              SMART-TB study of first-line anti-TB therapy
             </p>
             <ul className="mt-8 space-y-4">
               {FEATURES.map(({ icon: Icon, text }) => (
