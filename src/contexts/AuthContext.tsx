@@ -6,7 +6,7 @@ import { useCrfStore } from './CrfStoreContext';
 import { findAccount } from '../data/demoAccounts';
 import type { StaffUser } from '../types/crf';
 
-const SESSION_KEY = 'smart-tb-crf:session:v1';
+const SESSION_KEY = 'smart-tb-crf:session:v2';
 const ATTEMPTS_KEY = 'smart-tb-crf:login-attempts:v1';
 
 export const IDLE_TIMEOUT_MIN = 15;

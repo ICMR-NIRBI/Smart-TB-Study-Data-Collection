@@ -2,7 +2,7 @@ import React from 'react';
 import { InputField } from '../ui/InputField';
 import { ChoiceField } from '../ui/ChoiceField';
 import { CheckToggle } from '../ui/CheckToggle';
-import { SignaturePad } from '../ui/SignaturePad';
+import { SignOffFields } from '../ui/SignOffFields';
 import { Alert } from '../ui/Alert';
 import { Button } from '../ui/Button';
 import { FormField } from '../ui/FormField';
@@ -98,11 +98,16 @@ export function Module10Closeout({ participant, data, update, readOnly, errors, 
           <CheckToggle label={PI_ATTESTATION} checked={data.attest} onChange={(v) => update({ attest: v })} readOnly={readOnly} invalid={!!errors.attest} />
           {errors.attest && <p className="mt-1.5 text-sm text-danger-700">{errors.attest}</p>}
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <InputField id="piName" label="PI name" value={data.piName} onChange={(v) => update({ piName: v })} required readOnly={readOnly} error={errors.piName} />
-          <InputField id="m10-signDate" label="Date" kind="date" value={data.signDate} onChange={(v) => update({ signDate: v })} required readOnly={readOnly} error={errors.signDate} />
-        </div>
-        <SignaturePad id="m10-signature" label="PI signature" value={data.signature} onChange={(v) => update({ signature: v })} readOnly={readOnly} required error={errors.signature} />
+        <SignOffFields
+          nameId="piName"
+          nameLabel="PI name"
+          name={data.piName}
+          dateId="m10-signDate"
+          date={data.signDate}
+          onChange={({ name, signDate }) => update({ piName: name, signDate })}
+          readOnly={readOnly}
+          errors={errors}
+        />
       </section>
 
       {!readOnly && (

@@ -6,6 +6,7 @@
  * It must load before Next.js, whose bundled graceful-fs captures fs.readlink at require time.
  * Safe to delete (and drop the --require flags) if the project moves to an NTFS drive.
  */
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- plain CommonJS preload, runs before any bundler
 const fs = require('node:fs');
 
 if (!fs.__exfatReadlinkPatched) {

@@ -20,7 +20,6 @@ export interface M2Data {
   inclusion: Record<string, YesNo>;
   exclusion: Record<string, YesNo>;
   investigatorName: string;
-  signature: string;
   signDate: string;
 }
 
@@ -91,7 +90,7 @@ export interface M5Data {
   dinnerGiven: string;
   timepoints: Record<string, TimepointEntry>;
   signerName: string;
-  signature: string;
+  signDate: string;
 }
 
 export interface ConcEntry {
@@ -103,7 +102,6 @@ export interface M6Data {
   conc: Record<DrugKey, Record<string, ConcEntry>>;
   pkFailure: Record<DrugKey, YesNo>;
   scientistName: string;
-  signature: string;
   signDate: string;
 }
 
@@ -164,7 +162,6 @@ export interface M10Data {
   reason: M10Reason;
   attest: boolean;
   piName: string;
-  signature: string;
   signDate: string;
 }
 

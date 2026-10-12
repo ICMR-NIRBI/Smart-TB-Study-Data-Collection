@@ -3,7 +3,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { useCrfStore } from '../contexts/CrfStoreContext';
 import { evaluateEligibility } from '../utils/clinical';
-import { getAccess, getCurrentModule, isIneligible, isRecordLocked } from '../utils/gating';
+import { getAccess, getCurrentModule, isIneligible, isPreviewOnly, isRecordLocked } from '../utils/gating';
 import { validateModule } from '../utils/validation';
 import type { CrfData, M10Reason, ModuleId, ModuleKey } from '../types/crf';
 
@@ -38,7 +38,8 @@ export function useParticipantView(uid: string) {
   const meta = participant?.meta[selected];
   const editing = !!meta?.editing;
   const recordLocked = participant ? isRecordLocked(participant) : false;
-  const readOnly = access === 'locked' || (access === 'complete' && !editing);
+  const previewOnly = participant ? isPreviewOnly(participant, selected) : false;
+  const readOnly = access === 'locked' || (access === 'complete' && !editing) || (previewOnly && recordLocked);
 
   const errors = useMemo(() => (participant ? validateModule(selected, participant) : {}), [participant, selected]);
   const errorCount = Object.keys(errors).length;
@@ -50,6 +51,8 @@ export function useParticipantView(uid: string) {
   }, [selected]);
 
   const selectModule = useCallback((id: ModuleId) => setModuleParam(id), [setModuleParam]);
+  const prevModule = selected > 1 ? ((selected - 1) as ModuleId) : null;
+  const nextModule = selected < 10 ? ((selected + 1) as ModuleId) : null;
 
   const requestComplete = () => {
     if (errorCount > 0) {
@@ -105,6 +108,9 @@ export function useParticipantView(uid: string) {
     meta,
     editing,
     readOnly,
+    previewOnly,
+    prevModule,
+    nextModule,
     recordLocked,
     ineligible,
     errorCount,

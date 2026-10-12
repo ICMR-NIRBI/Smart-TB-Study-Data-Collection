@@ -5,7 +5,7 @@ import { ChoiceField } from '../ui/ChoiceField';
 import { CalcField } from '../ui/CalcField';
 import { Alert } from '../ui/Alert';
 import { Button } from '../ui/Button';
-import { SignaturePad } from '../ui/SignaturePad';
+import { SignOffFields } from '../ui/SignOffFields';
 import { TimepointCard } from './sampling/TimepointCard';
 import { MEALS, TIMEPOINTS } from '../../data/timepoints';
 import { YES_NO } from '../../data/options';
@@ -181,17 +181,17 @@ export function Module5PkSampling({ participant, data, update, readOnly, errors 
         </ol>
       </section>
 
-      <SectionCard title="Sign-off" subtitle="Phlebotomist / Research Officer" forceOpen={hasErrorIn(errors, ['signerName', 'signature'])}>
-        <InputField
-          id="signerName"
-          label="Name"
-          value={data.signerName}
-          onChange={(v) => update({ signerName: v })}
-          required
+      <SectionCard title="Sign-off" subtitle="Phlebotomist / Research Officer" forceOpen={hasErrorIn(errors, ['signerName', 'signDate'])}>
+        <SignOffFields
+          nameId="signerName"
+          nameLabel="Name"
+          name={data.signerName}
+          dateId="m5-signDate"
+          date={data.signDate ?? ''}
+          onChange={({ name, signDate }) => update({ signerName: name, signDate })}
           readOnly={readOnly}
-          error={errors.signerName}
+          errors={errors}
         />
-        <SignaturePad id="m5-signature" label="Signature" value={data.signature} onChange={(v) => update({ signature: v })} readOnly={readOnly} required error={errors.signature} />
       </SectionCard>
     </div>
   );

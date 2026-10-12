@@ -1,12 +1,11 @@
 import type { StaffUser } from '../types/crf';
 
-export const STAFF_ROLES = ['Research Officer', 'Phlebotomist', 'PK Scientist', 'Principal Investigator'] as const;
-
-export const STAFF: Record<'ro' | 'phleb' | 'pk' | 'pi', StaffUser> = {
-  ro: { name: 'Dr. Priya Mukherjee', role: 'Research Officer' },
-  phleb: { name: 'Sourav Das', role: 'Phlebotomist' },
-  pk: { name: 'Dr. Neha Srivastava', role: 'PK Scientist' },
-  pi: { name: 'Prof. Arindam Basu', role: 'Principal Investigator' },
+/** Placeholder identities for the demo build — deliberately no real names or designations. */
+export const STAFF: Record<'demo' | 'test1' | 'test2' | 'test3', StaffUser> = {
+  demo: { name: 'demo', role: 'Demo account' },
+  test1: { name: 'test1', role: 'Test account' },
+  test2: { name: 'test2', role: 'Test account' },
+  test3: { name: 'test3', role: 'Test account' },
 };
 
-export const DEFAULT_USER: StaffUser = STAFF.ro;
+export const DEFAULT_USER: StaffUser = STAFF.test1;

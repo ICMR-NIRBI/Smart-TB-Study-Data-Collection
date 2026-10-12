@@ -13,7 +13,7 @@ import { CompleteModuleSheet } from '../components/participant/CompleteModuleShe
 import { EditReasonSheet } from '../components/participant/EditReasonSheet';
 import { DiscontinueSheet } from '../components/participant/DiscontinueSheet';
 import { useParticipantView } from '../hooks/useParticipantView';
-import { completedCount, getStatus } from '../utils/gating';
+import { completedCount, getCurrentModule, getStatus } from '../utils/gating';
 
 export function ParticipantView({ uid }: { uid: string }) {
   const view = useParticipantView(uid);
@@ -63,7 +63,7 @@ export function ParticipantView({ uid }: { uid: string }) {
             <ParticipantBanners participant={participant} />
             <VisitWindowChips startDate={participant.data.m4.startDate} />
           </div>
-          <ModuleHeader moduleId={view.selected} access={view.access} editing={view.editing} />
+          <ModuleHeader moduleId={view.selected} access={view.access} editing={view.editing} previewOnly={view.previewOnly} />
           <div key={view.selected} className="px-4 pb-8 lg:px-0">
             <ModuleRenderer
               participant={participant}
@@ -83,6 +83,10 @@ export function ParticipantView({ uid }: { uid: string }) {
             recordLocked={view.recordLocked}
             errorCount={view.errorCount}
             attempted={view.isAttempted}
+            previewOnly={view.previewOnly}
+            currentModule={getCurrentModule(participant)}
+            onPrev={view.prevModule ? () => view.selectModule(view.prevModule!) : undefined}
+            onNext={view.nextModule ? () => view.selectModule(view.nextModule!) : undefined}
             onSaveDraft={view.saveDraft}
             onComplete={view.requestComplete}
             onEdit={() => view.setSheet('edit')}

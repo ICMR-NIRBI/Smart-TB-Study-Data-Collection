@@ -63,8 +63,7 @@ function v2(p: Participant): Errors {
   INCLUSION_CRITERIA.forEach((c) => need(e, `inc.${c.key}`, d.inclusion[c.key] ?? '', 'Answer Yes or No'));
   EXCLUSION_CRITERIA.forEach((c) => need(e, `exc.${c.key}`, d.exclusion[c.key] ?? '', 'Answer Yes or No'));
   need(e, 'investigatorName', d.investigatorName.trim());
-  need(e, 'signature', d.signature, 'Signature required');
-  need(e, 'signDate', d.signDate);
+  need(e, 'signDate', d.signDate ?? '');
   return e;
 }
 
@@ -149,7 +148,7 @@ function v5(p: Participant): Errors {
     }
   });
   need(e, 'signerName', d.signerName.trim());
-  need(e, 'signature', d.signature, 'Signature required');
+  need(e, 'signDate', d.signDate ?? '');
   return e;
 }
 
@@ -170,8 +169,7 @@ function v6(p: Participant): Errors {
     need(e, `pkFailure.${drug.key}`, d.pkFailure[drug.key]);
   });
   need(e, 'scientistName', d.scientistName.trim());
-  need(e, 'signature', d.signature, 'Signature required');
-  need(e, 'signDate', d.signDate);
+  need(e, 'signDate', d.signDate ?? '');
   return e;
 }
 
@@ -251,8 +249,7 @@ function v10(p: Participant): Errors {
   }
   need(e, 'attest', d.attest, 'PI attestation is required');
   need(e, 'piName', d.piName.trim());
-  need(e, 'signature', d.signature, 'Signature required');
-  need(e, 'signDate', d.signDate);
+  need(e, 'signDate', d.signDate ?? '');
   return e;
 }
 

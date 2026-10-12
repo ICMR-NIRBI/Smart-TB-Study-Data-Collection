@@ -69,7 +69,6 @@ export function emptyCrf(): CrfData {
       inclusion: Object.fromEntries(INCLUSION_CRITERIA.map((c) => [c.key, ''])) as Record<string, YesNo>,
       exclusion: Object.fromEntries(EXCLUSION_CRITERIA.map((c) => [c.key, ''])) as Record<string, YesNo>,
       investigatorName: '',
-      signature: '',
       signDate: '',
     },
     m3: {
@@ -86,12 +85,12 @@ export function emptyCrf(): CrfData {
     m5: {
       samplingDate: '', t0: '', fastingConfirmed: '', breakfastGiven: '', lunchGiven: '', dinnerGiven: '',
       timepoints: Object.fromEntries(TIMEPOINTS.map((tp) => [tp.key, emptyTimepoint()])),
-      signerName: '', signature: '',
+      signerName: '', signDate: '',
     },
     m6: {
       conc: emptyConc(),
       pkFailure: { R: '', H: '', Z: '', E: '' },
-      scientistName: '', signature: '', signDate: '',
+      scientistName: '', signDate: '',
     },
     m7: { visitDate: '', dosesDispensed: '', blistersReturned: '', cough: '', fever: '', weight: '', adr: '' },
     m8: {
@@ -100,7 +99,7 @@ export function emptyCrf(): CrfData {
       inhMutation: '', inhMutationText: '', dstAvailable: '', dstR: '', dstH: '', dstZ: '', dstE: '',
     },
     m9: { events: [], noEvents: false },
-    m10: { date: '', status: '', reason: '', attest: false, piName: '', signature: '', signDate: '' },
+    m10: { date: '', status: '', reason: '', attest: false, piName: '', signDate: '' },
   };
 }
 

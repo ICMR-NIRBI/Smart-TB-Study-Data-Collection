@@ -35,8 +35,7 @@ function screening(date: string, exclusionYes: string[] = []): CrfData['m2'] {
     exclusion: Object.fromEntries(
       EXCLUSION_CRITERIA.map((c) => [c.key, exclusionYes.includes(c.key) ? 'yes' : 'no']),
     ) as Record<string, YesNo>,
-    investigatorName: STAFF.pi.name,
-    signature: `typed:${STAFF.pi.name}`,
+    investigatorName: STAFF.demo.name,
     signDate: date,
   };
 }
@@ -100,10 +99,10 @@ function buildSeed(): Participant[] {
   p1.m4 = { startDate: '2026-09-26', weightBand: '50-64', doseR: '600', doseH: '300', doseZ: '1600', doseE: '1100', revisitDate: '2026-10-03', missedDoses: 'none', daysMissed: '', consecutiveDays: '', toxicity: 'absent', admitted: 'yes', dinnerTime: '20:30' };
   p1.m5 = { ...p1.m5, samplingDate: '2026-10-05', t0: '07:00', fastingConfirmed: 'yes', breakfastGiven: '09:30', timepoints: { ...sampled('07:00', 2), '3': { ...emptyTimepoint(), actual: '10:02', blood: true, bloodImg: '4109' } } };
   const m1 = metaWith({
-    1: done(STAFF.ro, '2026-09-24T10:15:00'),
-    2: done(STAFF.pi, '2026-09-24T11:40:00'),
-    3: done(STAFF.ro, '2026-09-25T16:05:00'),
-    4: done(STAFF.ro, '2026-10-03T12:20:00'),
+    1: done(STAFF.test1, '2026-09-24T10:15:00'),
+    2: done(STAFF.demo, '2026-09-24T11:40:00'),
+    3: done(STAFF.test1, '2026-09-25T16:05:00'),
+    4: done(STAFF.test1, '2026-10-03T12:20:00'),
   });
   m1[5] = { ...m1[5], draftSavedAt: '2026-10-05T10:04:00' };
 
@@ -116,16 +115,16 @@ function buildSeed(): Participant[] {
   p2.m5 = {
     samplingDate: '2026-09-14', t0: '06:45', fastingConfirmed: 'yes', breakfastGiven: '09:15', lunchGiven: '11:20', dinnerGiven: '16:50',
     timepoints: sampled('06:45', 24, { '12': 14 }, { '12': 'Participant in washroom; sample drawn 14 min late.' }),
-    signerName: STAFF.phleb.name, signature: `typed:${STAFF.phleb.name}`,
+    signerName: STAFF.test2.name, signDate: '2026-09-15',
   };
-  p2.m6 = { conc: simulatedConc(), pkFailure: { R: 'no', H: 'no', Z: 'no', E: 'yes' }, scientistName: STAFF.pk.name, signature: `typed:${STAFF.pk.name}`, signDate: '2026-10-01' };
+  p2.m6 = { conc: simulatedConc(), pkFailure: { R: 'no', H: 'no', Z: 'no', E: 'yes' }, scientistName: STAFF.test3.name, signDate: '2026-10-01' };
   const m2 = metaWith({
-    1: done(STAFF.ro, '2026-09-04T09:50:00'),
-    2: done(STAFF.pi, '2026-09-04T11:05:00'),
-    3: done(STAFF.ro, '2026-09-05T15:30:00'),
-    4: done(STAFF.ro, '2026-09-13T12:45:00'),
-    5: done(STAFF.phleb, '2026-09-15T08:10:00'),
-    6: done(STAFF.pk, '2026-10-01T17:25:00'),
+    1: done(STAFF.test1, '2026-09-04T09:50:00'),
+    2: done(STAFF.demo, '2026-09-04T11:05:00'),
+    3: done(STAFF.test1, '2026-09-05T15:30:00'),
+    4: done(STAFF.test1, '2026-09-13T12:45:00'),
+    5: done(STAFF.test2, '2026-09-15T08:10:00'),
+    6: done(STAFF.test3, '2026-10-01T17:25:00'),
   });
 
   // 3 — Ineligible (HIV co-infection), routed to closeout
@@ -134,8 +133,8 @@ function buildSeed(): Participant[] {
   p3.m2 = screening('2026-09-29', ['hiv']);
   p3.m10 = { ...p3.m10, status: 'discontinued', reason: 'screen_failure' };
   const m3 = metaWith({
-    1: done(STAFF.ro, '2026-09-29T10:40:00'),
-    2: done(STAFF.pi, '2026-09-29T12:10:00'),
+    1: done(STAFF.test1, '2026-09-29T10:40:00'),
+    2: done(STAFF.demo, '2026-09-29T12:10:00'),
   });
 
   // 4 — Discontinued (hepatotoxicity), record closed
@@ -148,14 +147,14 @@ function buildSeed(): Participant[] {
     noEvents: false,
     events: [{ id: 'ae_seed_1', term: 'Drug-induced hepatitis (ALT 412 U/L)', startDate: '2026-08-20', stopDate: '2026-09-08', ongoing: false, grade: '3', relationship: 'probable', sae: 'no', action: 'stopped', outcome: 'resolved' }],
   };
-  p4.m10 = { date: '2026-08-22', status: 'discontinued', reason: 'toxicity', attest: true, piName: STAFF.pi.name, signature: `typed:${STAFF.pi.name}`, signDate: '2026-08-22' };
+  p4.m10 = { date: '2026-08-22', status: 'discontinued', reason: 'toxicity', attest: true, piName: STAFF.demo.name, signDate: '2026-08-22' };
   const m4 = metaWith({
-    1: done(STAFF.ro, '2026-08-10T10:00:00'),
-    2: done(STAFF.pi, '2026-08-10T11:30:00'),
-    3: done(STAFF.ro, '2026-08-11T15:10:00'),
-    4: done(STAFF.ro, '2026-08-19T13:05:00'),
-    9: done(STAFF.ro, '2026-08-21T09:40:00'),
-    10: done(STAFF.pi, '2026-08-22T16:15:00'),
+    1: done(STAFF.test1, '2026-08-10T10:00:00'),
+    2: done(STAFF.demo, '2026-08-10T11:30:00'),
+    3: done(STAFF.test1, '2026-08-11T15:10:00'),
+    4: done(STAFF.test1, '2026-08-19T13:05:00'),
+    9: done(STAFF.test1, '2026-08-21T09:40:00'),
+    10: done(STAFF.demo, '2026-08-22T16:15:00'),
   });
 
   return [

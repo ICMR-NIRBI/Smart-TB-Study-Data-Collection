@@ -6,11 +6,14 @@ interface ModuleHeaderProps {
   moduleId: ModuleId;
   access: ModuleAccess;
   editing: boolean;
+  previewOnly?: boolean;
 }
 
-export function ModuleHeader({ moduleId, access, editing }: ModuleHeaderProps) {
+export function ModuleHeader({ moduleId, access, editing, previewOnly }: ModuleHeaderProps) {
   const def = getModuleDef(moduleId);
-  const chip = editing
+  const chip = previewOnly
+    ? { label: 'Preview — not yet unlocked', cls: 'bg-lock-100 text-lock-600 ring-line' }
+    : editing
     ? { label: 'Editing — reason logged', cls: 'bg-warn-50 text-warn-700 ring-warn-200' }
     : access === 'complete'
       ? { label: 'Completed · locked', cls: 'bg-ok-50 text-ok-700 ring-ok-200' }

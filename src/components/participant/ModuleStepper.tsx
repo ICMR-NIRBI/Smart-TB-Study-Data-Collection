@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { CheckIcon, LockIcon } from 'lucide-react';
 import { MODULES } from '../../data/modules';
-import { getAccess, lockReason } from '../../utils/gating';
+import { getAccess, isPreviewOnly, lockReason } from '../../utils/gating';
 import { formatTimestamp } from '../../utils/dates';
 import type { ModuleAccess, ModuleId, Participant } from '../../types/crf';
 
@@ -97,7 +97,7 @@ export function ModuleStepper({ participant, selected, onSelect, orientation }: 
           const sub =
             access === 'complete'
               ? `Completed ${formatTimestamp(meta.completedAt).slice(0, 10)}${meta.editing ? ' · editing' : ''}`
-              : locked
+              : locked || isPreviewOnly(participant, m.id)
                 ? lockReason(participant, m.id)
                 : STATE_TEXT[access];
           return (

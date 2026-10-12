@@ -1,8 +1,7 @@
 import React from 'react';
 import { CalculatorIcon } from 'lucide-react';
 import { SegmentedControl } from '../ui/SegmentedControl';
-import { InputField } from '../ui/InputField';
-import { SignaturePad } from '../ui/SignaturePad';
+import { SignOffFields } from '../ui/SignOffFields';
 import { EXCLUSION_CRITERIA, INCLUSION_CRITERIA, type Criterion } from '../../data/criteria';
 import { evaluateEligibility } from '../../utils/clinical';
 import type { ModuleProps, YesNo } from '../../types/crf';
@@ -107,35 +106,15 @@ export function Module2Eligibility({ data, update, readOnly, errors }: ModulePro
         <h3 id="inv-signoff" className="font-semibold text-ink">
           Investigator sign-off
         </h3>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <InputField
-            id="investigatorName"
-            label="Investigator name"
-            value={data.investigatorName}
-            onChange={(v) => update({ investigatorName: v })}
-            required
-            readOnly={readOnly}
-            error={errors.investigatorName}
-          />
-          <InputField
-            id="m2-signDate"
-            label="Date"
-            kind="date"
-            value={data.signDate}
-            onChange={(v) => update({ signDate: v })}
-            required
-            readOnly={readOnly}
-            error={errors.signDate}
-          />
-        </div>
-        <SignaturePad
-          id="m2-signature"
-          label="Investigator signature"
-          value={data.signature}
-          onChange={(v) => update({ signature: v })}
+        <SignOffFields
+          nameId="investigatorName"
+          nameLabel="Investigator name"
+          name={data.investigatorName}
+          dateId="m2-signDate"
+          date={data.signDate}
+          onChange={({ name, signDate }) => update({ investigatorName: name, signDate })}
           readOnly={readOnly}
-          required
-          error={errors.signature}
+          errors={errors}
         />
       </section>
     </div>

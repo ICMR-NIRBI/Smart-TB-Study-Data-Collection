@@ -1,4 +1,5 @@
 import { MODULES, type ModuleDef } from '../data/modules';
+import { PREVIEW_MODE } from '../data/previewMode';
 import { VISIT_WINDOWS } from '../data/visitWindows';
 import { evaluateEligibility } from './clinical';
 import { addDays, todayISO } from './dates';
@@ -25,11 +26,21 @@ export function getCurrentModule(p: Participant): ModuleId {
   return next ?? 10;
 }
 
-export function getAccess(p: Participant, id: ModuleId): ModuleAccess {
+function strictAccess(p: Participant, id: ModuleId): ModuleAccess {
   if (p.meta[id].completed) return 'complete';
   if (isRecordLocked(p)) return 'locked';
   if (id === 9) return isIneligible(p) ? 'locked' : 'open';
   return getCurrentModule(p) === id ? 'current' : 'locked';
+}
+
+/** True when a module is only reachable because preview mode lifted its lock (it can be viewed, not locked). */
+export function isPreviewOnly(p: Participant, id: ModuleId): boolean {
+  return PREVIEW_MODE && strictAccess(p, id) === 'locked';
+}
+
+export function getAccess(p: Participant, id: ModuleId): ModuleAccess {
+  const access = strictAccess(p, id);
+  return PREVIEW_MODE && access === 'locked' ? 'open' : access;
 }
 
 export function getStatus(p: Participant): ParticipantStatus {

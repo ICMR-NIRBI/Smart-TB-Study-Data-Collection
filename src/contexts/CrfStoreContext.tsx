@@ -8,7 +8,7 @@ import { newParticipant } from '../utils/participant';
 import type { CrfData, M10Reason, ModuleId, ModuleKey, Participant, StaffUser } from '../types/crf';
 
 // Local-only persistence for the dev phase. Swap these two loaders/savers for API calls when MongoDB is connected.
-const STORAGE_KEY = 'smart-tb-crf:participants:v1';
+const STORAGE_KEY = 'smart-tb-crf:participants:v3';
 
 interface CrfStore {
   participants: Participant[];
@@ -31,6 +31,8 @@ function cloneSeed(): Participant[] {
 
 function loadParticipants(): Participant[] {
   try {
+    // Older demo data used placeholder staff names (v1) and drawn signatures (v2); drop it for the current shape.
+    ['smart-tb-crf:participants:v1', 'smart-tb-crf:participants:v2'].forEach((k) => localStorage.removeItem(k));
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw) as Participant[];
   } catch {

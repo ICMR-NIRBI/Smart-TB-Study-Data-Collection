@@ -17,10 +17,10 @@ export interface DemoAccount {
 export const DEMO_PASSWORD = 'SmartTB@2026';
 
 export const DEMO_ACCOUNTS: DemoAccount[] = [
-  { email: 'admin@smarttb.study', password: DEMO_PASSWORD, user: STAFF.pi, isAdmin: true, label: 'Admin · Principal Investigator' },
-  { email: 'ro@smarttb.study', password: DEMO_PASSWORD, user: STAFF.ro, label: 'Research Officer' },
-  { email: 'phleb@smarttb.study', password: DEMO_PASSWORD, user: STAFF.phleb, label: 'Phlebotomist' },
-  { email: 'pk@smarttb.study', password: DEMO_PASSWORD, user: STAFF.pk, label: 'PK Scientist' },
+  { email: 'demo@smarttb.study', password: DEMO_PASSWORD, user: STAFF.demo, isAdmin: true, label: 'demo · admin' },
+  { email: 'test1@smarttb.study', password: DEMO_PASSWORD, user: STAFF.test1, label: 'test1' },
+  { email: 'test2@smarttb.study', password: DEMO_PASSWORD, user: STAFF.test2, label: 'test2' },
+  { email: 'test3@smarttb.study', password: DEMO_PASSWORD, user: STAFF.test3, label: 'test3' },
 ];
 
 export function findAccount(email: string): DemoAccount | undefined {

@@ -1,8 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { SectionCard } from '../ui/SectionCard';
-import { InputField } from '../ui/InputField';
 import { ChoiceField } from '../ui/ChoiceField';
-import { SignaturePad } from '../ui/SignaturePad';
+import { SignOffFields } from '../ui/SignOffFields';
 import { ConcentrationChart } from './pk/ConcentrationChart';
 import { ConcentrationTable } from './pk/ConcentrationTable';
 import { PkSummaryTable } from './pk/PkSummaryTable';
@@ -112,12 +111,17 @@ export function Module6Bioanalysis({ participant, data, update, readOnly, errors
         </fieldset>
       </SectionCard>
 
-      <SectionCard title="PK scientist sign-off" forceOpen={hasErrorIn(errors, ['scientistName', 'signature', 'signDate'])}>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <InputField id="scientistName" label="PK scientist name" value={data.scientistName} onChange={(v) => update({ scientistName: v })} required readOnly={readOnly} error={errors.scientistName} />
-          <InputField id="m6-signDate" label="Date" kind="date" value={data.signDate} onChange={(v) => update({ signDate: v })} required readOnly={readOnly} error={errors.signDate} />
-        </div>
-        <SignaturePad id="m6-signature" label="Signature" value={data.signature} onChange={(v) => update({ signature: v })} readOnly={readOnly} required error={errors.signature} />
+      <SectionCard title="PK scientist sign-off" forceOpen={hasErrorIn(errors, ['scientistName', 'signDate'])}>
+        <SignOffFields
+          nameId="scientistName"
+          nameLabel="PK scientist name"
+          name={data.scientistName}
+          dateId="m6-signDate"
+          date={data.signDate}
+          onChange={({ name, signDate }) => update({ scientistName: name, signDate })}
+          readOnly={readOnly}
+          errors={errors}
+        />
       </SectionCard>
     </div>
   );
