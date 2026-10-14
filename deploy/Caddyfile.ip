@@ -1,0 +1,6 @@
+# Testing before a domain exists: plain http on the server's IP address. Dummy data only.
+# Set COOKIE_SECURE=false in /opt/smarttb/.env while this file is in use.
+:80 {
+	encode gzip
+	reverse_proxy 127.0.0.1:3000
+}

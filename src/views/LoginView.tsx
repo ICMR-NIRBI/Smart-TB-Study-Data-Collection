@@ -18,14 +18,19 @@ import {
   SmartphoneIcon,
 } from 'lucide-react';
 import { IDLE_TIMEOUT_MIN, useAuth } from '../contexts/AuthContext';
-import { DEMO_ACCOUNTS, type DemoAccount } from '../data/demoAccounts';
-import { HERO_DESKTOP_URL, HERO_MOBILE_URL } from '../data/assets';
+import { api } from '../utils/api';
+import { EMAIL_RE } from '../utils/accountRules';
+
+interface TestAccount {
+  email: string;
+  name: string;
+  roleLabel: string;
+  isAdmin: boolean;
+}
+import { HERO_DESKTOP_URL, HERO_FALLBACK, HERO_MOBILE_URL } from '../data/assets';
 import { BrandMark } from '../components/auth/BrandMark';
+import { LoadingScreen } from '../components/auth/LoadingScreen';
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-
-const HERO_FALLBACK =
-  'radial-gradient(ellipse 70% 60% at 95% 100%, rgba(0,237,100,0.85) 0%, rgba(0,104,74,0.75) 40%, rgba(2,47,56,0) 75%), radial-gradient(ellipse 45% 55% at 85% 15%, rgba(127,227,211,0.22) 0%, rgba(2,47,56,0) 70%), #022f38';
 
 type BannerTone = 'ok' | 'warn' | 'danger';
 
@@ -65,7 +70,7 @@ function safeNext(raw: string | null): string {
 }
 
 export function LoginView() {
-  const { session, notice, clearNotice, signIn, lockoutRemaining } = useAuth();
+  const { session, loading, transition, notice, clearNotice, signIn, signInAsTest, lockoutRemaining } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
   const next = safeNext(params.get('next'));
@@ -78,16 +83,25 @@ export function LoginView() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
-  const [demoOpen, setDemoOpen] = useState(false);
+  const [demoOpen, setDemoOpen] = useState(true);
+  const [testAccounts, setTestAccounts] = useState<TestAccount[]>([]);
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
 
   const emailValid = EMAIL_RE.test(email.trim());
   const locked = step === 'password' && lockoutRemaining(email) > 0;
 
+  // The server lists test accounts only while ALLOW_TEST_LOGIN is on (testing phase).
   useEffect(() => {
-    if (session) router.replace(next);
-  }, [session, router, next]);
+    api<{ accounts: TestAccount[] }>('/api/auth/test-accounts')
+      .then((r) => setTestAccounts(r.accounts))
+      .catch(() => setTestAccounts([]));
+  }, []);
+
+  // Move on once the sign-in loading screen has finished.
+  useEffect(() => {
+    if (session && !transition) router.replace(next);
+  }, [session, transition, router, next]);
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -97,7 +111,9 @@ export function LoginView() {
     return () => window.clearTimeout(t);
   }, [step]);
 
-  if (session) return <div className="min-h-screen bg-canvas" aria-busy="true" />;
+  // While the sign-in hold runs, the auth layer already shows the loading screen.
+  if (session) return transition ? null : <LoadingScreen message="Signing you in…" />;
+  if (loading) return <LoadingScreen message="Checking your session…" />;
 
   const handleNext = (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,20 +144,22 @@ export function LoginView() {
     setShowForgot(false);
   };
 
-  const pickDemo = (a: DemoAccount) => {
+  const pickTestAccount = async (a: TestAccount) => {
+    if (busy) return;
     clearNotice();
     setError(null);
-    setEmail(a.email);
-    setEmailTouched(false);
-    setPassword(a.password);
-    setStep('password');
+    setBusy(true);
+    const result = await signInAsTest(a.email);
+    if (result.ok) return; // the session effect redirects
+    setBusy(false);
+    setError(result.error);
   };
 
   return (
     <div className="relative flex min-h-screen w-full bg-forest-950 lg:bg-white">
       {/* Mobile illustration: art on top, dark copy-space below */}
       <div aria-hidden="true" className="absolute inset-x-0 top-0 h-[48vh] min-h-[320px] overflow-hidden lg:hidden" style={{ background: HERO_FALLBACK }}>
-        {HERO_MOBILE_URL && <Image src={HERO_MOBILE_URL} alt="" fill priority sizes="100vw" className="object-cover object-top" />}
+        {HERO_MOBILE_URL && <Image src={HERO_MOBILE_URL} alt="" fill priority unoptimized sizes="100vw" className="object-cover object-top" />}
         <div className="absolute inset-0 bg-gradient-to-b from-forest-950/30 via-transparent to-forest-950" />
       </div>
 
@@ -320,7 +338,8 @@ export function LoginView() {
               </AnimatePresence>
             </div>
 
-            {/* Dev helper — remove once real authentication is connected */}
+            {/* Testing phase only: one-tap sign-in, shown while the server has ALLOW_TEST_LOGIN on */}
+            {testAccounts.length > 0 && (
             <div className="mt-8 rounded-xl border border-dashed border-line-strong">
               <button
                 type="button"
@@ -329,8 +348,8 @@ export function LoginView() {
                 className="flex min-h-[48px] w-full items-center justify-between gap-3 rounded-xl px-4 text-left text-sm font-medium text-ink-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
               >
                 <span>
-                  Prototype demo accounts
-                  <span className="ml-2 rounded-full bg-warn-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-warn-700">Demo</span>
+                  Test accounts — tap to sign in
+                  <span className="ml-2 rounded-full bg-warn-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-warn-700">Testing</span>
                 </span>
                 <ChevronDownIcon className={`h-4 w-4 transition-transform duration-200 ${demoOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
               </button>
@@ -343,28 +362,31 @@ export function LoginView() {
                     transition={{ duration: 0.2 }}
                     className="overflow-hidden px-2 pb-2"
                   >
-                    {DEMO_ACCOUNTS.map((a) => (
+                    {testAccounts.map((a) => (
                       <li key={a.email}>
                         <button
                           type="button"
-                          onClick={() => pickDemo(a)}
+                          onClick={() => void pickTestAccount(a)}
+                          disabled={busy}
                           className="flex min-h-[48px] w-full items-center justify-between gap-3 rounded-lg px-2 text-left transition-colors duration-150 hover:bg-canvas focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
                         >
                           <span className="min-w-0">
-                            <span className="block truncate text-sm font-medium text-ink">{a.label}</span>
+                            <span className="block truncate text-sm font-medium text-ink">
+                              {a.name} · {a.roleLabel}
+                              {a.isAdmin ? ' + admin' : ''}
+                            </span>
                             <span className="block truncate text-xs text-ink-muted">{a.email}</span>
                           </span>
-                          <span className="shrink-0 text-xs font-semibold text-brand-700">Use</span>
+                          <span className="shrink-0 text-xs font-semibold text-brand-700">Sign in</span>
                         </button>
                       </li>
                     ))}
-                    <li className="px-2 pt-1 text-xs text-ink-muted">
-                      Password for all: <code className="rounded bg-canvas px-1 py-0.5 font-mono text-ink">SmartTB@2026</code>
-                    </li>
+                    <li className="px-2 pt-1 text-xs text-ink-muted">For testing with dummy data only. Switched off before real participants are entered.</li>
                   </motion.ul>
                 )}
               </AnimatePresence>
             </div>
+            )}
 
             <div className="mt-auto pt-10">
               <p className="flex items-start gap-2 text-xs leading-relaxed text-ink-muted">
@@ -380,7 +402,7 @@ export function LoginView() {
       {/* Desktop illustration */}
       <aside className="relative hidden flex-1 overflow-hidden lg:block" style={{ background: HERO_FALLBACK }}>
         {HERO_DESKTOP_URL && (
-          <Image src={HERO_DESKTOP_URL} alt="" aria-hidden="true" fill priority sizes="(min-width: 1024px) 70vw, 0px" className="object-cover object-[72%_center]" />
+          <Image src={HERO_DESKTOP_URL} alt="" aria-hidden="true" fill priority unoptimized sizes="(min-width: 1024px) 70vw, 0px" className="object-cover object-[72%_center]" />
         )}
         <div className="absolute inset-y-0 left-0 w-[70%] bg-gradient-to-r from-forest-950/90 via-forest-950/55 to-transparent" aria-hidden="true" />
 

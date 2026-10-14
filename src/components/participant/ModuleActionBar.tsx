@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronLeftIcon, ChevronRightIcon, EyeIcon, LockIcon, PencilIcon, SaveIcon } from 'lucide-react';
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, EyeIcon, Loader2Icon, LockIcon, PencilIcon, SaveIcon } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { PREVIEW_MODE } from '../../data/previewMode';
 import type { ModuleAccess, ModuleId } from '../../types/crf';
@@ -13,6 +13,17 @@ interface ModuleActionBarProps {
   attempted: boolean;
   /** Module is reachable only because preview mode lifted its lock. */
   previewOnly?: boolean;
+  /** The signed-in role may fill in this module. */
+  canEnter: boolean;
+  /** The signed-in role may lock (sign off) this module. */
+  canComplete: boolean;
+  /** The signed-in role may reopen this module once locked. */
+  canReopen: boolean;
+  roleLabel: string;
+  /** Field edits are still on their way to the server. */
+  saving: boolean;
+  /** An action (lock, reopen) is waiting for the server. */
+  busy: boolean;
   currentModule?: ModuleId;
   onPrev?: () => void;
   onNext?: () => void;
@@ -51,6 +62,12 @@ export function ModuleActionBar({
   errorCount,
   attempted,
   previewOnly,
+  canEnter,
+  canComplete,
+  canReopen,
+  roleLabel,
+  saving,
+  busy,
   currentModule,
   onPrev,
   onNext,
@@ -70,7 +87,7 @@ export function ModuleActionBar({
             <LockIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span className="truncate">{recordLocked ? 'Record closed · read-only' : 'Completed · read-only'}</span>
           </p>
-          {!recordLocked && (
+          {!recordLocked && canReopen && (
             <Button variant="secondary" icon={<PencilIcon className="h-4 w-4" aria-hidden="true" />} onClick={onEdit}>
               Edit (reason required)
             </Button>
@@ -94,6 +111,18 @@ export function ModuleActionBar({
     );
   }
 
+  if (!canEnter) {
+    return (
+      <div className={wrapper}>
+        {nav}
+        <p className="flex items-center gap-2 py-1 text-sm text-ink-muted">
+          <EyeIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
+          View only — {roleLabel || 'your role'} does not enter Module {moduleId}
+        </p>
+      </div>
+    );
+  }
+
   const primaryLabel = editing ? 'Save & re-lock' : moduleId === 10 ? 'Close & lock record' : 'Complete & lock module';
 
   return (
@@ -104,13 +133,30 @@ export function ModuleActionBar({
           {errorCount} {errorCount === 1 ? 'field needs' : 'fields need'} attention before locking
         </p>
       )}
+      <p className="mb-2 flex items-center gap-1.5 text-xs text-ink-muted" role="status" aria-live="polite">
+        {saving ? (
+          <>
+            <Loader2Icon className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            Saving…
+          </>
+        ) : (
+          <>
+            <CheckIcon className="h-3.5 w-3.5" aria-hidden="true" />
+            All changes saved
+          </>
+        )}
+      </p>
       <div className="flex gap-2">
         <Button variant="secondary" className="flex-1" icon={<SaveIcon className="hidden h-4 w-4 sm:block" aria-hidden="true" />} onClick={onSaveDraft}>
           Save draft
         </Button>
-        <Button className="flex-[1.6]" icon={<LockIcon className="hidden h-4 w-4 sm:block" aria-hidden="true" />} onClick={onComplete}>
-          {primaryLabel}
-        </Button>
+        {canComplete ? (
+          <Button className="flex-[1.6]" icon={<LockIcon className="hidden h-4 w-4 sm:block" aria-hidden="true" />} onClick={onComplete} disabled={busy}>
+            {primaryLabel}
+          </Button>
+        ) : (
+          <p className="flex flex-[1.6] items-center text-sm text-ink-muted">The PI signs off and locks this module.</p>
+        )}
       </div>
     </div>
   );

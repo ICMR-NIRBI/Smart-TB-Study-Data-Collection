@@ -1,0 +1,10 @@
+[Unit]
+Description=SMART-TB encrypted database backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=smarttb
+Group=smarttb
+ExecStart=/usr/local/bin/smarttb-backup

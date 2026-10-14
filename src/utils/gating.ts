@@ -26,7 +26,8 @@ export function getCurrentModule(p: Participant): ModuleId {
   return next ?? 10;
 }
 
-function strictAccess(p: Participant, id: ModuleId): ModuleAccess {
+/** Access ignoring preview mode — what the server enforces when a module is locked. */
+export function strictAccess(p: Participant, id: ModuleId): ModuleAccess {
   if (p.meta[id].completed) return 'complete';
   if (isRecordLocked(p)) return 'locked';
   if (id === 9) return isIneligible(p) ? 'locked' : 'open';

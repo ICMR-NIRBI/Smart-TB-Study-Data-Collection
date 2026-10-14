@@ -1,12 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
-import { PlusIcon, SearchIcon, UserIcon, UsersIcon } from 'lucide-react';
+import { Loader2Icon, PlusIcon, SearchIcon, UserIcon, UsersIcon } from 'lucide-react';
 import { ParticipantCard } from '../components/dashboard/ParticipantCard';
 import { UserSheet } from '../components/dashboard/UserSheet';
+import { LoadingScreen } from '../components/auth/LoadingScreen';
 import { useCrfStore } from '../contexts/CrfStoreContext';
 import { IDLE_TIMEOUT_MIN, useAuth } from '../contexts/AuthContext';
 import { SITE_NAME } from '../data/modules';
+import { canEnroll } from '../data/roles';
 import { getStatus } from '../utils/gating';
 import type { ParticipantStatus } from '../types/crf';
 
@@ -21,12 +22,13 @@ const FILTERS: { key: Filter; label: string }[] = [
 ];
 
 export function DashboardView() {
-  const { participants, user, enroll, resetDemo } = useCrfStore();
+  const { participants, loading, loadError, reload, user, actor, enroll } = useCrfStore();
   const { session, signOut } = useAuth();
   const router = useRouter();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [userOpen, setUserOpen] = useState(false);
+  const [enrolling, setEnrolling] = useState(false);
 
   const rows = useMemo(
     () => participants.map((p) => ({ p, status: getStatus(p) })).sort((a, b) => b.p.updatedAt.localeCompare(a.p.updatedAt)),
@@ -46,9 +48,12 @@ export function DashboardView() {
     (r) => (filter === 'all' || r.status === filter) && (!q || (r.p.data.m1.participantId || 'new participant').toLowerCase().includes(q)),
   );
 
-  const handleEnroll = () => {
-    const uid = enroll();
-    router.push(`/p/${uid}`);
+  const handleEnroll = async () => {
+    if (enrolling) return;
+    setEnrolling(true);
+    const uid = await enroll();
+    if (uid) router.push(`/p/${uid}`);
+    else setEnrolling(false);
   };
 
   const initials = user.name
@@ -58,6 +63,8 @@ export function DashboardView() {
     .slice(0, 2)
     .join('')
     .toUpperCase();
+
+  if (loading) return <LoadingScreen message="Loading participant records…" />;
 
   return (
     <div className="min-h-screen w-full bg-canvas">
@@ -123,7 +130,19 @@ export function DashboardView() {
 
       <main className="mx-auto max-w-3xl px-4 pb-32 pt-4">
         <h2 className="sr-only">Participants</h2>
-        {visible.length > 0 ? (
+        {loadError ? (
+          <div className="mt-10 flex flex-col items-center text-center" role="alert">
+            <p className="font-medium text-ink">Could not load participants</p>
+            <p className="text-sm text-ink-muted">{loadError}</p>
+            <button
+              type="button"
+              onClick={() => void reload()}
+              className="mt-3 min-h-[44px] rounded-xl border border-line-strong px-4 text-sm font-semibold text-ink hover:bg-white"
+            >
+              Try again
+            </button>
+          </div>
+        ) : visible.length > 0 ? (
           <ul className="space-y-3">
             {visible.map(({ p, status }) => (
               <li key={p.uid}>
@@ -140,30 +159,28 @@ export function DashboardView() {
         )}
       </main>
 
+      {canEnroll(actor) && (
       <button
         type="button"
-        onClick={handleEnroll}
+        onClick={() => void handleEnroll()}
+        disabled={enrolling}
         className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-4 z-30 flex min-h-[56px] items-center gap-2 rounded-2xl bg-brand-600 pl-4 pr-5 font-semibold text-white shadow-lg transition-[background-color,transform] duration-150 ease-out hover:bg-brand-700 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 lg:right-[calc(50%_-_23rem)]"
       >
-        <PlusIcon className="h-5 w-5" aria-hidden="true" />
+        {enrolling ? <Loader2Icon className="h-5 w-5 animate-spin" aria-hidden="true" /> : <PlusIcon className="h-5 w-5" aria-hidden="true" />}
         Enroll participant
       </button>
+      )}
 
       <UserSheet
         open={userOpen}
         user={user}
         email={session?.email ?? ''}
-        isAdmin={Boolean(session?.isAdmin)}
+        isAdmin={Boolean(session?.actor.isAdmin)}
         idleMinutes={IDLE_TIMEOUT_MIN}
         onClose={() => setUserOpen(false)}
         onSignOut={() => {
           setUserOpen(false);
           signOut('signed_out');
-        }}
-        onResetDemo={() => {
-          resetDemo();
-          setUserOpen(false);
-          toast('Demo data restored');
         }}
       />
     </div>

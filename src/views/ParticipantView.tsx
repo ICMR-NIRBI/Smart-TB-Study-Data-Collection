@@ -1,6 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { SearchXIcon } from 'lucide-react';
+import { LoadingScreen } from '../components/auth/LoadingScreen';
 import { ParticipantTopBar } from '../components/participant/ParticipantTopBar';
 import { ModuleStepper } from '../components/participant/ModuleStepper';
 import { ParticipantBanners } from '../components/participant/ParticipantBanners';
@@ -19,12 +20,16 @@ export function ParticipantView({ uid }: { uid: string }) {
   const view = useParticipantView(uid);
   const { participant } = view;
 
+  if (!participant && view.loading) {
+    return <LoadingScreen message="Loading participant record…" />;
+  }
+
   if (!participant || !view.meta) {
     return (
       <main className="flex min-h-screen w-full flex-col items-center justify-center gap-3 bg-canvas px-6 text-center">
         <SearchXIcon className="h-10 w-10 text-ink-muted" aria-hidden="true" />
-        <h1 className="text-lg font-semibold text-ink">Participant not found on this device</h1>
-        <p className="max-w-sm text-sm text-ink-muted">Records are stored locally in this browser. Check you&apos;re on the same device used for data entry.</p>
+        <h1 className="text-lg font-semibold text-ink">Participant not found</h1>
+        <p className="max-w-sm text-sm text-ink-muted">This record does not exist, or the link is incomplete. Open the participant from the dashboard.</p>
         <Link href="/" className="mt-2 flex min-h-[48px] items-center rounded-xl bg-brand-600 px-5 font-semibold text-white hover:bg-brand-700">
           Back to dashboard
         </Link>
@@ -33,7 +38,7 @@ export function ParticipantView({ uid }: { uid: string }) {
   }
 
   const status = getStatus(participant);
-  const canDiscontinue = !view.recordLocked && !view.ineligible && !participant.discontinuationRequested;
+  const canDiscontinue = view.canDiscontinue && !view.recordLocked && !view.ineligible && !participant.discontinuationRequested;
   const canReportAe = !view.recordLocked && !view.ineligible;
 
   return (
@@ -84,6 +89,12 @@ export function ParticipantView({ uid }: { uid: string }) {
             errorCount={view.errorCount}
             attempted={view.isAttempted}
             previewOnly={view.previewOnly}
+            canEnter={view.canEnter}
+            canComplete={view.canComplete}
+            canReopen={view.canReopen}
+            roleLabel={view.user.role}
+            saving={view.saving}
+            busy={view.busy}
             currentModule={getCurrentModule(participant)}
             onPrev={view.prevModule ? () => view.selectModule(view.prevModule!) : undefined}
             onNext={view.nextModule ? () => view.selectModule(view.nextModule!) : undefined}

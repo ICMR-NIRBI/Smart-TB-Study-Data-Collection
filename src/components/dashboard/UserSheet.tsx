@@ -1,5 +1,6 @@
 import React from 'react';
-import { LogOutIcon, ShieldCheckIcon } from 'lucide-react';
+import Link from 'next/link';
+import { ChevronRightIcon, LogOutIcon, ShieldCheckIcon, UsersIcon } from 'lucide-react';
 import { Sheet } from '../ui/Sheet';
 import { Button } from '../ui/Button';
 import type { StaffUser } from '../../types/crf';
@@ -12,10 +13,9 @@ interface UserSheetProps {
   idleMinutes: number;
   onClose: () => void;
   onSignOut: () => void;
-  onResetDemo: () => void;
 }
 
-export function UserSheet({ open, user, email, isAdmin, idleMinutes, onClose, onSignOut, onResetDemo }: UserSheetProps) {
+export function UserSheet({ open, user, email, isAdmin, idleMinutes, onClose, onSignOut }: UserSheetProps) {
   return (
     <Sheet
       open={open}
@@ -42,19 +42,20 @@ export function UserSheet({ open, user, email, isAdmin, idleMinutes, onClose, on
           </p>
           <p className="mt-1 truncate text-sm text-ink-muted">{email}</p>
         </div>
+        {isAdmin && (
+          <Link
+            href="/admin"
+            className="flex min-h-[52px] items-center gap-3 rounded-2xl border border-line px-4 text-sm font-semibold text-ink transition-colors duration-150 hover:bg-canvas focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+          >
+            <UsersIcon className="h-5 w-5 text-brand-600" aria-hidden="true" />
+            <span className="flex-1">Manage staff accounts</span>
+            <ChevronRightIcon className="h-4 w-4 text-ink-muted" aria-hidden="true" />
+          </Link>
+        )}
         <p className="flex items-start gap-2 text-sm text-ink-muted">
           <ShieldCheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" aria-hidden="true" />
           You are signed out automatically after {idleMinutes} minutes of inactivity. Always sign out on shared ward devices.
         </p>
-        <div className="border-t border-line pt-4">
-          <button
-            type="button"
-            onClick={onResetDemo}
-            className="min-h-[44px] text-sm font-medium text-danger-700 underline-offset-2 hover:underline"
-          >
-            Reset demo data on this device
-          </button>
-        </div>
       </div>
     </Sheet>
   );

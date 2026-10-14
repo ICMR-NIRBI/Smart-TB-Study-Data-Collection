@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { useCrfStore } from '../contexts/CrfStoreContext';
+import { canCompleteModule, canDiscontinue, canEnterModule, canReopenModule } from '../data/roles';
 import { evaluateEligibility } from '../utils/clinical';
 import { getAccess, getCurrentModule, isIneligible, isPreviewOnly, isRecordLocked } from '../utils/gating';
 import { validateModule } from '../utils/validation';
@@ -15,12 +16,13 @@ function isModuleId(n: number): n is ModuleId {
 
 export function useParticipantView(uid: string) {
   const store = useCrfStore();
-  const { updateModuleData, completeModule, saveDraft: storeSaveDraft, requestEdit, discontinue } = store;
+  const { actor, updateModuleData, completeModule, saveDraft: storeSaveDraft, requestEdit, discontinue } = store;
   const participant = store.participants.find((p) => p.uid === uid);
   const router = useRouter();
   const params = useSearchParams();
   const [sheet, setSheet] = useState<SheetKind>(null);
   const [attempted, setAttempted] = useState<Partial<Record<ModuleId, boolean>>>({});
+  const [busy, setBusy] = useState(false);
 
   const setModuleParam = useCallback(
     (id: ModuleId | null) => {
@@ -39,7 +41,10 @@ export function useParticipantView(uid: string) {
   const editing = !!meta?.editing;
   const recordLocked = participant ? isRecordLocked(participant) : false;
   const previewOnly = participant ? isPreviewOnly(participant, selected) : false;
-  const readOnly = access === 'locked' || (access === 'complete' && !editing) || (previewOnly && recordLocked);
+  const canReopen = canReopenModule(actor, selected);
+  const canEnter = canEnterModule(actor, selected) || (editing && canReopen);
+  const canComplete = canCompleteModule(actor, selected) || (editing && canReopen);
+  const readOnly = access === 'locked' || (access === 'complete' && !editing) || (previewOnly && recordLocked) || !canEnter;
 
   const errors = useMemo(() => (participant ? validateModule(selected, participant) : {}), [participant, selected]);
   const errorCount = Object.keys(errors).length;
@@ -66,28 +71,48 @@ export function useParticipantView(uid: string) {
     setSheet('complete');
   };
 
-  const confirmComplete = () => {
+  const confirmComplete = async () => {
+    if (busy) return;
     const wasEditing = editing;
-    completeModule(uid, selected);
+    setBusy(true);
+    const result = await completeModule(uid, selected);
+    setBusy(false);
     setSheet(null);
+    if (!result.ok) {
+      if (result.details) setAttempted((a) => ({ ...a, [selected]: true }));
+      toast.error(result.error);
+      return;
+    }
     toast.success(wasEditing ? `Module ${selected} re-locked` : selected === 10 ? 'Record closed and locked' : `Module ${selected} completed & locked`);
     if (!wasEditing && selected !== 9) setModuleParam(null);
   };
 
-  const saveDraft = () => {
-    storeSaveDraft(uid, selected);
-    toast.success('Draft saved on this device');
+  const saveDraft = async () => {
+    const result = await storeSaveDraft(uid, selected);
+    if (result.ok) toast.success('Draft saved');
+    else toast.error(result.error);
   };
 
-  const confirmEdit = (reason: string) => {
-    requestEdit(uid, selected, reason);
+  const confirmEdit = async (reason: string) => {
+    if (busy) return;
+    setBusy(true);
+    const result = await requestEdit(uid, selected, reason);
+    setBusy(false);
     setSheet(null);
-    toast('Module unlocked for editing — reason logged');
+    if (result.ok) toast('Module unlocked for editing — reason logged');
+    else toast.error(result.error);
   };
 
-  const confirmDiscontinue = (reason: M10Reason) => {
-    discontinue(uid, reason);
+  const confirmDiscontinue = async (reason: M10Reason) => {
+    if (busy) return;
+    setBusy(true);
+    const result = await discontinue(uid, reason);
+    setBusy(false);
     setSheet(null);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
     setModuleParam(10);
     toast.warning('Participant discontinued — complete Module 10 closeout');
   };
@@ -102,7 +127,14 @@ export function useParticipantView(uid: string) {
 
   return {
     participant,
+    loading: store.loading,
+    saving: store.saving,
     user: store.user,
+    canEnter,
+    canComplete,
+    canReopen,
+    canDiscontinue: canDiscontinue(actor),
+    busy,
     selected,
     access,
     meta,

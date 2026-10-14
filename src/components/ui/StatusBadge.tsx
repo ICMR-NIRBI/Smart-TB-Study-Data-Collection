@@ -8,10 +8,6 @@ const STATUS: Record<ParticipantStatus, { label: string; cls: string; dot: strin
   discontinued: { label: 'Discontinued', cls: 'border-lock-300 bg-lock-100 text-lock-600', dot: 'bg-lock-500' },
 };
 
-export function statusLabel(status: ParticipantStatus): string {
-  return STATUS[status].label;
-}
-
 export function StatusBadge({ status }: { status: ParticipantStatus }) {
   const s = STATUS[status];
   return (

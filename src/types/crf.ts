@@ -204,6 +204,8 @@ export interface Participant {
   discontinuationRequested: boolean;
   data: CrfData;
   meta: Record<ModuleId, ModuleMeta>;
+  /** Set when the server withheld phone and address from the signed-in user. */
+  contactsHidden?: boolean;
 }
 
 export interface StaffUser {

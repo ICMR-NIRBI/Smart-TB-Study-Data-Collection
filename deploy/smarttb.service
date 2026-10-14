@@ -1,0 +1,29 @@
+[Unit]
+Description=SMART-TB CRF web application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=smarttb
+Group=smarttb
+WorkingDirectory=/opt/smarttb/app
+EnvironmentFile=/opt/smarttb/.env
+Environment=NODE_ENV=production
+# Listens on localhost only; Caddy is the only thing exposed to the internet.
+ExecStart=/usr/bin/node node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000
+Restart=always
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/smarttb/app/.next
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

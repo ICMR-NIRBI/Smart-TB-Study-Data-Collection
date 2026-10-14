@@ -1,0 +1,11 @@
+# Production: replace smarttb.example.in with the real domain, then copy to /etc/caddy/Caddyfile and run
+#   systemctl reload caddy
+# Caddy obtains and renews the Let's Encrypt certificate automatically and redirects http to https.
+smarttb.example.in {
+	encode gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	reverse_proxy 127.0.0.1:3000
+}

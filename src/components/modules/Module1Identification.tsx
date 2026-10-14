@@ -15,7 +15,7 @@ function formatIdSuffix(raw: string): string {
   return digits.length > 3 ? `${digits.slice(0, 3)}-${digits.slice(3)}` : digits;
 }
 
-export function Module1Identification({ data, update, readOnly, errors }: ModuleProps<'m1'>) {
+export function Module1Identification({ participant, data, update, readOnly, errors }: ModuleProps<'m1'>) {
   const age = ageInYears(data.dob, data.screeningDate);
   const underage = age !== null && age >= 0 && age < 18;
   const suffix = data.participantId.startsWith(PREFIX) ? data.participantId.slice(PREFIX.length) : data.participantId;
@@ -102,6 +102,9 @@ export function Module1Identification({ data, update, readOnly, errors }: Module
             <p className="mt-0.5 text-xs text-ink-muted">Identifiers are held separately from coded study data.</p>
           </div>
         </div>
+        {participant.contactsHidden ? (
+          <p className="p-4 text-sm text-ink-muted">Phone and address are visible only to the PI and the study administrator.</p>
+        ) : (
         <div className="grid gap-4 p-4 sm:grid-cols-2">
           <InputField
             id="phone"
@@ -124,6 +127,7 @@ export function Module1Identification({ data, update, readOnly, errors }: Module
             error={errors.address}
           />
         </div>
+        )}
       </section>
     </div>
   );

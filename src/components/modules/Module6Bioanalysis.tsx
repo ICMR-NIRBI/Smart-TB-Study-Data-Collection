@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { SectionCard } from '../ui/SectionCard';
 import { ChoiceField } from '../ui/ChoiceField';
 import { SignOffFields } from '../ui/SignOffFields';
-import { ConcentrationChart } from './pk/ConcentrationChart';
 import { ConcentrationTable } from './pk/ConcentrationTable';
 import { PkSummaryTable } from './pk/PkSummaryTable';
 import { DRUGS } from '../../data/drugs';
@@ -10,6 +10,12 @@ import { toNum } from '../../utils/clinical';
 import { computePk, concentrationPoints, type PkSummary } from '../../utils/pk';
 import { hasErrorIn } from '../../utils/validation';
 import type { ConcEntry, DrugKey, ModuleProps } from '../../types/crf';
+
+// The charting library is large and only this module draws a chart, so it loads on demand.
+const ConcentrationChart = dynamic(() => import('./pk/ConcentrationChart').then((m) => m.ConcentrationChart), {
+  ssr: false,
+  loading: () => <div className="h-[17rem] rounded-2xl border border-line bg-white" aria-hidden="true" />,
+});
 
 export function Module6Bioanalysis({ participant, data, update, readOnly, errors }: ModuleProps<'m6'>) {
   const [active, setActive] = useState<DrugKey>('R');
