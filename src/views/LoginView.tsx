@@ -394,6 +394,7 @@ export function LoginView() {
                 Contains confidential participant data. Access is monitored and audited; unauthorised use is prohibited.
               </p>
               <p className="mt-3 text-xs text-ink-muted">© 2026 SMART-TB Study · NRS Medical College &amp; Hospital, Kolkata</p>
+              <p className="mt-1 text-xs text-ink-muted">Developed by Kalpojyoti Koch, Amity Centre for Artificial Intelligence, in collaboration with ICMR-NIRBI</p>
             </div>
           </div>
         </div>

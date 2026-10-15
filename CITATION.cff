@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use or refer to this software, please cite it as below."
+title: "SMART-TB Study Data Collection"
+abstract: "Electronic case report form application for the SMART-TB pharmacokinetic study of first-line anti-tuberculosis drugs."
+type: software
+authors:
+  - family-names: "Koch"
+    given-names: "Kalpojyoti"
+    email: "kalpokoch@gmail.com"
+    affiliation: "Amity Centre for Artificial Intelligence"
+repository-code: "https://github.com/ICMR-NIRBI/Smart-TB-Study-Data-Collection"
+version: "0.1.0"
+date-released: "2026-10-15"
+license-url: "https://github.com/ICMR-NIRBI/Smart-TB-Study-Data-Collection/blob/main/LICENSE"

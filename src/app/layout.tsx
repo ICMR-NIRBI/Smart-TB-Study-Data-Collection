@@ -9,6 +9,8 @@ const serif = Source_Serif_4({ variable: '--font-serif', subsets: ['latin'], wei
 export const metadata: Metadata = {
   title: 'SMART-TB CRF',
   description: 'Case report form data entry for the SMART-TB pharmacokinetic study',
+  authors: [{ name: 'Kalpojyoti Koch' }],
+  creator: 'Kalpojyoti Koch',
   robots: { index: false, follow: false },
 };
 

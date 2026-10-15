@@ -2,6 +2,8 @@
   "name": "web",
   "version": "0.1.0",
   "private": true,
+  "author": "Kalpojyoti Koch <kalpokoch@gmail.com>",
+  "license": "SEE LICENSE IN LICENSE",
   "scripts": {
     "dev": "node --require ./scripts/exfat-readlink-fix.cjs node_modules/next/dist/bin/next dev",
     "build": "node --require ./scripts/exfat-readlink-fix.cjs node_modules/next/dist/bin/next build",
