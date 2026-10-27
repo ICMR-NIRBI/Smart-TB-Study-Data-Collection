@@ -4,6 +4,7 @@ import React, { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '../../contexts/AuthContext';
 import { LoadingScreen } from './LoadingScreen';
+import { ChangePasswordView } from '../../views/ChangePasswordView';
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth();
@@ -15,5 +16,6 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
   }, [session, loading, router, pathname]);
 
   if (!session) return <LoadingScreen message={loading ? 'Checking your session…' : 'Redirecting to log in…'} />;
+  if (session.mustChangePassword) return <ChangePasswordView />;
   return <>{children}</>;
 }

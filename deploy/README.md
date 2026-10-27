@@ -77,7 +77,7 @@ bash /opt/smarttb/app/deploy/deploy.sh <commit>   # a specific version (also how
 ## 6. Backups
 
 ```bash
-systemctl enable --now smarttb-backup.timer   # every 6 hours, after .env backup settings are filled in
+systemctl enable --now smarttb-backup.timer   # every hour, after .env backup settings are filled in
 systemctl start smarttb-backup                # run one now
 journalctl -u smarttb-backup -n 20            # check
 ```

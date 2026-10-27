@@ -1,7 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
 import { getPool, withTransaction } from './db';
-import { hashToken, verifyPassword } from './passwords';
+import { hashPassword, hashToken, verifyPassword } from './passwords';
+import { ApiError } from './participants';
+import { LOGIN_LOCKOUT_MS, MAX_LOGIN_ATTEMPTS, passwordProblem } from '../utils/accountRules';
 import { ROLE_LABELS, isRoleKey, type Actor, type RoleKey } from '../data/roles';
 import type { ModuleId } from '../types/crf';
 
@@ -14,14 +16,16 @@ export const SESSION_COOKIE = 'smarttb_session';
 export const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 const MAX_SESSION_MS = 12 * 60 * 60 * 1000;
 const TOUCH_EVERY_MS = 60 * 1000;
-const MAX_ATTEMPTS = 5;
-const LOCKOUT_MS = 5 * 60 * 1000;
+const MAX_ATTEMPTS = MAX_LOGIN_ATTEMPTS;
+const LOCKOUT_MS = LOGIN_LOCKOUT_MS;
 
 export interface SessionUser extends Actor {
   id: string;
   email: string;
   name: string;
   roleLabel: string;
+  /** Signed in with a temporary password: the only thing allowed is choosing a new one. */
+  mustChangePassword: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -37,6 +41,7 @@ interface UserRow {
   is_admin: boolean;
   password_hash: string | null;
   active: boolean;
+  must_change_password: boolean;
 }
 
 async function loadDelegations(userId: string): Promise<ModuleId[]> {
@@ -57,6 +62,7 @@ async function toSessionUser(row: UserRow): Promise<SessionUser> {
     roleLabel: ROLE_LABELS[role],
     isAdmin: row.is_admin,
     delegations: await loadDelegations(row.id),
+    mustChangePassword: row.must_change_password,
   };
 }
 
@@ -173,6 +179,46 @@ export async function signOut(): Promise<void> {
     }
   }
   jar.delete(SESSION_COOKIE);
+}
+
+/**
+ * The signed-in person chooses a new password. Needs the current one, so a borrowed session cannot change it.
+ * Wrong current passwords count towards the same lockout as sign-in. Other sessions for the account end.
+ */
+export async function changeOwnPassword(user: SessionUser, currentPassword: string, newPassword: string): Promise<void> {
+  const pool = getPool();
+  const lock = await pool.query<{ fails: number; locked_until: Date | null }>('select fails, locked_until from login_attempts where email = $1', [user.email]);
+  const lockedUntil = lock.rows[0]?.locked_until?.getTime() ?? 0;
+  if (lockedUntil > Date.now()) {
+    const mins = Math.ceil((lockedUntil - Date.now()) / 60000);
+    throw new ApiError(429, `Too many failed attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`);
+  }
+
+  const { rows } = await pool.query<{ password_hash: string | null }>('select password_hash from app_users where id = $1', [user.id]);
+  if (!(await verifyPassword(currentPassword, rows[0]?.password_hash ?? null))) {
+    const fails = (lockedUntil ? 0 : (lock.rows[0]?.fails ?? 0)) + 1;
+    await pool.query(
+      `insert into login_attempts (email, fails, locked_until) values ($1, $2, $3)
+       on conflict (email) do update set fails = excluded.fails, locked_until = excluded.locked_until`,
+      [user.email, fails, fails >= MAX_ATTEMPTS ? new Date(Date.now() + LOCKOUT_MS) : null],
+    );
+    throw new ApiError(400, 'The current password is not correct');
+  }
+  const problem = passwordProblem(newPassword, user.email);
+  if (problem) throw new ApiError(400, problem);
+  if (newPassword === currentPassword) throw new ApiError(400, 'Choose a password different from the current one');
+
+  const keep = hashToken((await cookies()).get(SESSION_COOKIE)?.value ?? '');
+  const hash = await hashPassword(newPassword);
+  await withTransaction({ userId: user.id, reason: 'Password changed by the user' }, async (c) => {
+    await c.query('update app_users set password_hash = $2, must_change_password = false, updated_at = now() where id = $1', [user.id, hash]);
+    await c.query('delete from sessions where user_id = $1 and token_hash <> $2', [user.id, keep]);
+    await c.query('delete from login_attempts where email = $1', [user.email]);
+    await c.query(
+      `insert into audit_log (user_id, table_name, row_key, action, changes) values ($1::uuid, 'app_users', $1::text, 'PASSWORD_CHANGED', '{}'::jsonb)`,
+      [user.id],
+    );
+  });
 }
 
 /** The signed-in user for this request, or null when signed out, idle too long, or deactivated. */

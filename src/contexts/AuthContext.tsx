@@ -23,6 +23,8 @@ export interface Session {
   email: string;
   user: StaffUser;
   actor: Actor;
+  /** Signed in with a temporary password: only choosing a new one is allowed. */
+  mustChangePassword: boolean;
 }
 
 export type SignInResult = { ok: true } | { ok: false; error: string; locked?: boolean };
@@ -39,6 +41,8 @@ interface AuthStore {
   /** Testing phase only: sign in to a test account without a password. */
   signInAsTest: (email: string) => Promise<SignInResult>;
   signOut: (reason?: 'signed_out' | 'timeout') => void;
+  /** Called once the server has accepted a new password. */
+  passwordChanged: () => void;
   lockoutRemaining: (email: string) => number;
 }
 
@@ -50,6 +54,7 @@ interface ServerUser {
   roleLabel: string;
   isAdmin: boolean;
   delegations: ModuleId[];
+  mustChangePassword: boolean;
 }
 
 function toSession(u: ServerUser): Session {
@@ -57,6 +62,7 @@ function toSession(u: ServerUser): Session {
     email: u.email,
     user: { name: u.name, role: u.roleLabel },
     actor: { role: u.role, isAdmin: u.isAdmin, delegations: u.delegations },
+    mustChangePassword: u.mustChangePassword,
   };
 }
 
@@ -127,6 +133,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [endLocally]);
 
   const clearNotice = useCallback(() => setNotice(null), []);
+
+  const passwordChanged = useCallback(() => setSession((s) => (s ? { ...s, mustChangePassword: false } : s)), []);
 
   const lockoutRemaining = useCallback(
     (email: string) => Math.max(0, (lockouts[email.trim().toLowerCase()] ?? 0) - Date.now()),
@@ -212,8 +220,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [session, signOut, endLocally]);
 
   const value = useMemo<AuthStore>(
-    () => ({ session, loading, transition, notice, clearNotice, signIn, signInAsTest, signOut, lockoutRemaining }),
-    [session, loading, transition, notice, clearNotice, signIn, signInAsTest, signOut, lockoutRemaining],
+    () => ({ session, loading, transition, notice, clearNotice, signIn, signInAsTest, signOut, passwordChanged, lockoutRemaining }),
+    [session, loading, transition, notice, clearNotice, signIn, signInAsTest, signOut, passwordChanged, lockoutRemaining],
   );
 
   return (

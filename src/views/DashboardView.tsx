@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Loader2Icon, PlusIcon, SearchIcon, UserIcon, UsersIcon } from 'lucide-react';
+import { ChevronRightIcon, Loader2Icon, PlusIcon, SearchIcon, UserIcon, UserPlusIcon, UsersIcon } from 'lucide-react';
 import { ParticipantCard } from '../components/dashboard/ParticipantCard';
 import { UserSheet } from '../components/dashboard/UserSheet';
 import { LoadingScreen } from '../components/auth/LoadingScreen';
@@ -8,7 +9,9 @@ import { useCrfStore } from '../contexts/CrfStoreContext';
 import { IDLE_TIMEOUT_MIN, useAuth } from '../contexts/AuthContext';
 import { SITE_NAME } from '../data/modules';
 import { canEnroll } from '../data/roles';
+import { api } from '../utils/api';
 import { getStatus } from '../utils/gating';
+import type { AccessRequest } from '../types/accessRequests';
 import type { ParticipantStatus } from '../types/crf';
 
 type Filter = 'all' | ParticipantStatus;
@@ -29,6 +32,16 @@ export function DashboardView() {
   const [filter, setFilter] = useState<Filter>('all');
   const [userOpen, setUserOpen] = useState(false);
   const [enrolling, setEnrolling] = useState(false);
+  const [waiting, setWaiting] = useState(0);
+
+  // Only the PI reviews access requests, so only the PI is told when some are waiting.
+  const isPi = session?.actor.role === 'pi';
+  useEffect(() => {
+    if (!isPi) return;
+    api<{ requests: AccessRequest[] }>('/api/admin/requests')
+      .then((r) => setWaiting(r.requests.filter((x) => x.status === 'pending').length))
+      .catch(() => setWaiting(0));
+  }, [isPi]);
 
   const rows = useMemo(
     () => participants.map((p) => ({ p, status: getStatus(p) })).sort((a, b) => b.p.updatedAt.localeCompare(a.p.updatedAt)),
@@ -130,6 +143,18 @@ export function DashboardView() {
 
       <main className="mx-auto max-w-3xl px-4 pb-32 pt-4">
         <h2 className="sr-only">Participants</h2>
+        {waiting > 0 && (
+          <Link
+            href="/admin"
+            className="mb-4 flex min-h-[52px] items-center gap-3 rounded-2xl border border-warn-200 bg-warn-50 px-4 text-sm font-semibold text-warn-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+          >
+            <UserPlusIcon className="h-5 w-5" aria-hidden="true" />
+            <span className="flex-1">
+              {waiting} access request{waiting === 1 ? '' : 's'} waiting for your review
+            </span>
+            <ChevronRightIcon className="h-4 w-4" aria-hidden="true" />
+          </Link>
+        )}
         {loadError ? (
           <div className="mt-10 flex flex-col items-center text-center" role="alert">
             <p className="font-medium text-ink">Could not load participants</p>

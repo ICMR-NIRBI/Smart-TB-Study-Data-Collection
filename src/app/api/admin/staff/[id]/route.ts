@@ -8,6 +8,7 @@ import {
   resetStaffPassword,
   setDelegations,
   setStaffActive,
+  setTemporaryPassword,
   updateStaff,
 } from '../../../../../server/staff';
 
@@ -27,7 +28,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
   );
 }
 
-/** `{ action: 'deactivate' | 'reactivate' | 'reset' | 'resend' | 'delegations', reason, delegations? }` */
+/** `{ action: 'deactivate' | 'reactivate' | 'reset' | 'temporary' | 'resend' | 'delegations', reason, delegations?, password? }` */
 export async function POST(req: Request, { params }: Ctx) {
   const { id } = await params;
   return apiHandler(
@@ -42,6 +43,7 @@ export async function POST(req: Request, { params }: Ctx) {
       return withTransaction({ userId: user.id, reason }, async (c) => {
         if (action === 'deactivate' || action === 'reactivate') return { member: await setStaffActive(c, user, id, action === 'reactivate') };
         if (action === 'reset') return resetStaffPassword(c, user, id);
+        if (action === 'temporary') return { member: await setTemporaryPassword(c, user, id, body.password) };
         if (action === 'delegations') return { member: await setDelegations(c, user, id, body.delegations, reason) };
         throw new ApiError(400, 'Unknown action');
       });

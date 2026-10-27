@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeftIcon, ChevronRightIcon, Loader2Icon, SearchIcon, ShieldAlertIcon, UserPlusIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import { AccessRequestSheet } from '../components/admin/AccessRequestSheet';
 import { AddStaffSheet } from '../components/admin/AddStaffSheet';
 import { StaffSheet } from '../components/admin/StaffSheet';
 import { SetupLinkSheet } from '../components/admin/SetupLinkSheet';
@@ -9,6 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { ROLE_LABELS } from '../data/roles';
 import { api } from '../utils/api';
 import { formatTimestamp } from '../utils/dates';
+import type { AccessRequest } from '../types/accessRequests';
 import type { SetupLink, StaffMember, StaffStatus } from '../types/staff';
 
 type Filter = 'all' | StaffStatus;
@@ -36,6 +38,9 @@ export function AdminView() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [linkFor, setLinkFor] = useState<{ member: StaffMember; link: SetupLink } | null>(null);
   const [selfId, setSelfId] = useState<string | null>(null);
+  const [requests, setRequests] = useState<AccessRequest[]>([]);
+  const [requestId, setRequestId] = useState<string | null>(null);
+  const isPi = session?.actor.role === 'pi';
 
   const load = useCallback(async () => {
     try {
@@ -48,9 +53,21 @@ export function AdminView() {
     }
   }, [session?.email]);
 
+  const loadRequests = useCallback(async () => {
+    try {
+      setRequests((await api<{ requests: AccessRequest[] }>('/api/admin/requests')).requests);
+    } catch {
+      /* the staff list still works without the inbox */
+    }
+  }, []);
+
   useEffect(() => {
     if (session?.actor.isAdmin) void load();
   }, [session?.actor.isAdmin, load]);
+
+  useEffect(() => {
+    if (isPi) void loadRequests();
+  }, [isPi, loadRequests]);
 
   const upsert = (m: StaffMember) => setStaff((prev) => (prev?.some((s) => s.id === m.id) ? prev.map((s) => (s.id === m.id ? m : s)) : [m, ...(prev ?? [])]));
 
@@ -96,7 +113,7 @@ export function AdminView() {
             </Link>
             <div className="min-w-0">
               <h1 className="text-2xl font-semibold tracking-tight text-ink">Staff accounts</h1>
-              <p className="text-sm text-ink-muted">Invite-only access. Accounts are deactivated, never deleted.</p>
+              <p className="text-sm text-ink-muted">Accounts come from invitations or approved requests. They are deactivated, never deleted.</p>
             </div>
           </div>
           <div className="relative mt-4">
@@ -138,6 +155,59 @@ export function AdminView() {
       </header>
 
       <main className="mx-auto max-w-3xl px-4 pb-32 pt-4">
+        {isPi && requests.length > 0 && (
+          <section aria-labelledby="requests-heading" className="mb-6">
+            <h2 id="requests-heading" className="mb-2 text-sm font-semibold text-ink">
+              Access requests
+              {requests.some((r) => r.status === 'pending') && (
+                <span className="ml-2 rounded-full bg-warn-50 px-2 py-0.5 text-xs font-semibold text-warn-700">
+                  {requests.filter((r) => r.status === 'pending').length} waiting
+                </span>
+              )}
+            </h2>
+            <ul className="space-y-2">
+              {requests
+                .filter((r) => r.status === 'pending')
+                .map((r) => (
+                  <li key={r.id}>
+                    <button
+                      type="button"
+                      onClick={() => setRequestId(r.id)}
+                      className="flex w-full items-center gap-3 rounded-2xl border border-warn-200 bg-warn-50/40 p-4 text-left transition-colors duration-150 hover:border-warn-600/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-ink">{r.name}</p>
+                        <p className="truncate text-sm text-ink-muted">{r.email}</p>
+                        <p className="mt-1 text-sm text-ink-soft">Asked for {ROLE_LABELS[r.requestedRole]}</p>
+                        <p className="text-xs text-ink-muted">Sent {formatTimestamp(r.createdAt)}</p>
+                      </div>
+                      <span className="shrink-0 text-sm font-semibold text-brand-700">Review</span>
+                      <ChevronRightIcon className="h-5 w-5 shrink-0 text-ink-muted" aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+            </ul>
+            {requests.some((r) => r.status !== 'pending') && (
+              <details className="mt-3 rounded-2xl border border-line bg-white px-4 py-3 text-sm">
+                <summary className="cursor-pointer font-medium text-ink-soft">Recent decisions ({requests.filter((r) => r.status !== 'pending').length})</summary>
+                <ul className="mt-3 space-y-2">
+                  {requests
+                    .filter((r) => r.status !== 'pending')
+                    .map((r) => (
+                      <li key={r.id}>
+                        <button type="button" onClick={() => setRequestId(r.id)} className="flex w-full items-center justify-between gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600">
+                          <span className="min-w-0 truncate text-ink">
+                            {r.name} <span className="text-ink-muted">· {r.email}</span>
+                          </span>
+                          <span className="shrink-0 capitalize text-ink-muted">{r.status}</span>
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              </details>
+            )}
+          </section>
+        )}
         <h2 className="sr-only">Staff</h2>
         {staff === null && !loadError ? (
           <div className="mt-16 flex justify-center text-ink-muted" aria-busy="true">
@@ -218,6 +288,16 @@ export function AdminView() {
         onLink={(member, link) => {
           setOpenId(null);
           setLinkFor({ member, link });
+        }}
+      />
+      <AccessRequestSheet
+        request={requests.find((r) => r.id === requestId) ?? null}
+        onClose={() => setRequestId(null)}
+        onDecided={(r, outcome) => {
+          setRequestId(null);
+          toast.success(outcome === 'approved' ? `${r.name} can now sign in` : 'Request rejected');
+          void loadRequests();
+          void load();
         }}
       />
       <SetupLinkSheet member={linkFor?.member ?? null} link={linkFor?.link ?? null} onClose={() => setLinkFor(null)} />

@@ -19,6 +19,8 @@ export interface StaffMember {
   role: RoleKey;
   isAdmin: boolean;
   status: StaffStatus;
+  /** Has a temporary password and has not chosen their own yet. */
+  mustChangePassword: boolean;
   lastSignInAt: string;
   createdAt: string;
   delegations: Delegation[];

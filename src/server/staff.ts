@@ -26,13 +26,13 @@ export function requireReason(raw: unknown): string {
   return reason;
 }
 
-function cleanName(raw: unknown): string {
+export function cleanName(raw: unknown): string {
   const name = typeof raw === 'string' ? raw.trim().replace(/\s+/g, ' ') : '';
   if (name.length < 2 || name.length > 80) throw new ApiError(400, 'Enter a name between 2 and 80 characters');
   return name;
 }
 
-function cleanRole(raw: unknown): RoleKey {
+export function cleanRole(raw: unknown): RoleKey {
   if (typeof raw !== 'string' || !isRoleKey(raw)) throw new ApiError(400, 'Choose a valid role');
   return raw;
 }
@@ -49,13 +49,14 @@ interface UserRow {
   is_admin: boolean;
   active: boolean;
   has_password: boolean;
+  must_change_password: boolean;
   last_sign_in_at: Date | null;
   created_at: Date;
 }
 
 export async function listStaff(q: Queryable): Promise<StaffMember[]> {
   const users = await q.query<UserRow>(
-    `select id, email, display_name, role, is_admin, active, password_hash is not null as has_password, last_sign_in_at, created_at
+    `select id, email, display_name, role, is_admin, active, password_hash is not null as has_password, must_change_password, last_sign_in_at, created_at
        from app_users order by active desc, display_name`,
   );
   const dels = await q.query<{ user_id: string; module_id: number; reason: string; expires_at: string | null; granted_at: Date; granted_by_name: string | null }>(
@@ -70,6 +71,7 @@ export async function listStaff(q: Queryable): Promise<StaffMember[]> {
     role: isRoleKey(u.role) ? u.role : 'research_officer',
     isAdmin: u.is_admin,
     status: !u.active ? 'deactivated' : u.has_password ? 'active' : 'invited',
+    mustChangePassword: u.must_change_password,
     lastSignInAt: u.last_sign_in_at?.toISOString() ?? '',
     createdAt: u.created_at.toISOString(),
     delegations: dels.rows
@@ -109,11 +111,13 @@ const LABELS: Record<string, string> = {
   active: 'Account active',
   email: 'Email',
   password_changed: 'Password',
+  must_change_password: 'Temporary password',
 };
 
 function describe(table: string, action: string, changes: Record<string, { old: unknown; new: unknown }>, rowKey: string): string {
   if (action === 'SETUP_LINK') return 'Setup link issued';
   if (action === 'PASSWORD_SET') return 'Password set from setup link';
+  if (action === 'PASSWORD_CHANGED') return 'Password changed by the person';
   if (table === 'module_delegations') {
     const moduleId = rowKey.split(':')[1];
     if (action === 'INSERT') return `Delegated Module ${moduleId}${changes.expires_at?.new ? ` until ${changes.expires_at.new}` : ''}`;
@@ -197,7 +201,7 @@ export async function completeSetup(q: Queryable, token: string, password: strin
 
   await q.query("select set_config('app.user_id', $1, true)", [row.user_id]);
   await q.query('update account_setup_tokens set used_at = now() where token_hash = $1', [hashToken(token)]);
-  await q.query('update app_users set password_hash = $2, updated_at = now() where id = $1', [row.user_id, await hashPassword(password)]);
+  await q.query('update app_users set password_hash = $2, must_change_password = false, updated_at = now() where id = $1', [row.user_id, await hashPassword(password)]);
   await q.query('delete from sessions where user_id = $1', [row.user_id]);
   await q.query('delete from login_attempts where email = $1', [row.email]);
   await q.query(
@@ -320,10 +324,41 @@ export async function resetStaffPassword(q: Queryable, admin: AdminActor, id: st
   const current = await getStaff(q, id);
   if (current.status === 'deactivated') throw new ApiError(409, 'Reactivate the account before issuing a setup link');
   if (id === admin.id) throw new ApiError(409, 'Ask the other administrator to reset your password');
-  await q.query('update app_users set password_hash = null, updated_at = now(), updated_by = $2 where id = $1', [id, admin.id]);
+  await q.query('update app_users set password_hash = null, must_change_password = false, updated_at = now(), updated_by = $2 where id = $1', [id, admin.id]);
   await q.query('delete from sessions where user_id = $1', [id]);
   const link = await issueSetupLink(q, id, admin.id);
   return { member: await getStaff(q, id), link };
+}
+
+/**
+ * Gives an account a starting password that must be changed at the first sign-in. Any unused setup link is cancelled,
+ * the person is signed out everywhere, and failed-attempt counts are cleared. Shared by the admin screen and the command line.
+ */
+export async function applyTemporaryPassword(q: Queryable, userId: string, password: string, updatedBy: string | null): Promise<void> {
+  const { rows } = await q.query<{ email: string }>('select email from app_users where id = $1 and active', [userId]);
+  if (!rows[0]) throw new ApiError(404, 'Active staff account not found');
+  const problem = passwordProblem(password, rows[0].email);
+  if (problem) throw new ApiError(400, problem);
+  await q.query('update app_users set password_hash = $2, must_change_password = true, updated_at = now(), updated_by = $3 where id = $1', [
+    userId,
+    await hashPassword(password),
+    updatedBy,
+  ]);
+  await q.query('update account_setup_tokens set expires_at = now() where user_id = $1 and used_at is null and expires_at > now()', [userId]);
+  await q.query('delete from sessions where user_id = $1', [userId]);
+  await q.query('delete from login_attempts where email = $1', [rows[0].email]);
+}
+
+/** Administrator action: a temporary password the person must replace at their first sign-in. */
+export async function setTemporaryPassword(q: Queryable, admin: AdminActor, id: string, password: unknown): Promise<StaffMember> {
+  assertAdmin(admin);
+  await lockUser(q, id);
+  const current = await getStaff(q, id);
+  if (current.status === 'deactivated') throw new ApiError(409, 'Reactivate the account first');
+  if (id === admin.id) throw new ApiError(409, 'Ask the other administrator to set a temporary password for you');
+  if (typeof password !== 'string' || !password) throw new ApiError(400, 'Enter the temporary password');
+  await applyTemporaryPassword(q, id, password, admin.id);
+  return getStaff(q, id);
 }
 
 /** A fresh link for someone who has not set their password yet (the earlier link is cancelled). */

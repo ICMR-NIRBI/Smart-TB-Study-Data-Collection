@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { HistoryIcon, KeyRoundIcon, Loader2Icon, SendIcon, UserCheckIcon, UserXIcon } from 'lucide-react';
+import { HistoryIcon, KeyRoundIcon, Loader2Icon, SendIcon, ShuffleIcon, UserCheckIcon, UserXIcon } from 'lucide-react';
 import { Sheet } from '../ui/Sheet';
 import { Button } from '../ui/Button';
 import { InputField } from '../ui/InputField';
@@ -10,14 +10,14 @@ import { Alert } from '../ui/Alert';
 import { MODULES } from '../../data/modules';
 import { ROLE_KEYS, ROLE_LABELS, ROLE_SUMMARY, roleModules, type RoleKey } from '../../data/roles';
 import { api } from '../../utils/api';
-import { MIN_ADMIN_REASON_LENGTH as MIN_REASON } from '../../utils/accountRules';
+import { MIN_ADMIN_REASON_LENGTH as MIN_REASON, generateTemporaryPassword, passwordProblem } from '../../utils/accountRules';
 import { formatDMY, formatTimestamp, todayISO } from '../../utils/dates';
 import type { ModuleId } from '../../types/crf';
 import type { SetupLink, StaffHistoryEntry, StaffMember } from '../../types/staff';
 
 const ROLE_OPTIONS = ROLE_KEYS.map((r) => ({ value: r, label: ROLE_LABELS[r], description: ROLE_SUMMARY[r] }));
 
-type PendingKind = 'details' | 'delegations' | 'deactivate' | 'reactivate' | 'reset';
+type PendingKind = 'details' | 'delegations' | 'deactivate' | 'reactivate' | 'reset' | 'temporary';
 
 const PENDING: Record<PendingKind, { title: string; confirm: string; danger?: boolean; note: string }> = {
   details: { title: 'Save account changes', confirm: 'Save changes', note: 'The change and your reason are kept in the audit trail.' },
@@ -29,6 +29,12 @@ const PENDING: Record<PendingKind, { title: string; confirm: string; danger?: bo
     note: 'They are signed out immediately and cannot sign in. Their name stays on everything they entered.',
   },
   reactivate: { title: 'Reactivate account', confirm: 'Reactivate', note: 'They can sign in again with their existing password.' },
+  temporary: {
+    title: 'Set temporary password',
+    confirm: 'Set temporary password',
+    danger: true,
+    note: 'Their current password stops working and they are signed out. They sign in with the temporary password and must choose their own before they can do anything else. You will see it once, to give them privately.',
+  },
   reset: {
     title: 'Reset password',
     confirm: 'Reset and create link',
@@ -64,6 +70,8 @@ export function StaffSheet({ member, isSelf, onClose, onUpdated, onLink }: Staff
   const [reasonTouched, setReasonTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tempPassword, setTempPassword] = useState('');
+  const [issued, setIssued] = useState<string | null>(null);
   const [history, setHistory] = useState<StaffHistoryEntry[] | null>(null);
   const memberId = member?.id;
 
@@ -76,6 +84,7 @@ export function StaffSheet({ member, isSelf, onClose, onUpdated, onLink }: Staff
     setDels(Object.fromEntries(member.delegations.map((d) => [d.moduleId, d.expiresAt])));
     setPending(null);
     setError(null);
+    setIssued(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [memberId]);
 
@@ -103,12 +112,14 @@ export function StaffSheet({ member, isSelf, onClose, onUpdated, onLink }: Staff
     setPending(kind);
     setReason('');
     setReasonTouched(false);
+    setTempPassword(kind === 'temporary' ? generateTemporaryPassword() : '');
     setError(null);
   };
 
   const confirm = async () => {
     setReasonTouched(true);
     if (!pending || reason.trim().length < MIN_REASON || busy) return;
+    if (pending === 'temporary' && passwordProblem(tempPassword, member.email)) return;
     setBusy(true);
     setError(null);
     const base = `/api/admin/staff/${member.id}`;
@@ -116,6 +127,11 @@ export function StaffSheet({ member, isSelf, onClose, onUpdated, onLink }: Staff
       if (pending === 'details') {
         const res = await api<{ member: StaffMember }>(base, { method: 'PATCH', body: { name: name.trim(), role, isAdmin, reason } });
         onUpdated(res.member);
+      } else if (pending === 'temporary') {
+        const res = await api<{ member: StaffMember }>(base, { method: 'POST', body: { action: 'temporary', reason, password: tempPassword } });
+        onUpdated(res.member);
+        setIssued(tempPassword);
+        setTempPassword('');
       } else if (pending === 'reset') {
         const res = await api<{ member: StaffMember; link: SetupLink }>(base, { method: 'POST', body: { action: 'reset', reason } });
         onUpdated(res.member);
@@ -157,6 +173,29 @@ export function StaffSheet({ member, isSelf, onClose, onUpdated, onLink }: Staff
       return next;
     });
 
+  if (issued) {
+    return (
+      <Sheet
+        open
+        onClose={() => setIssued(null)}
+        title="Temporary password set"
+        description={`${member.name} · ${member.email}`}
+        footer={
+          <Button className="flex-1" onClick={() => setIssued(null)}>
+            Done
+          </Button>
+        }
+      >
+        <div className="space-y-4">
+          <Alert tone="ok" title="Give this to them privately">
+            It is shown only now. They must choose their own password at their first sign-in.
+          </Alert>
+          <p className="select-all break-all rounded-lg border border-line-strong bg-canvas px-3 py-3 font-mono text-lg text-ink">{issued}</p>
+        </div>
+      </Sheet>
+    );
+  }
+
   if (pending) {
     const p = PENDING[pending];
     const short = reason.trim().length < MIN_REASON;
@@ -180,6 +219,22 @@ export function StaffSheet({ member, isSelf, onClose, onUpdated, onLink }: Staff
         <div className="space-y-4">
           {error && <Alert tone="danger" title={error} />}
           <p className="text-sm text-ink-soft">{p.note}</p>
+          {pending === 'temporary' && (
+            <InputField
+              id="temp-password"
+              label="Temporary password"
+              value={tempPassword}
+              onChange={setTempPassword}
+              required
+              error={reasonTouched ? (passwordProblem(tempPassword, member.email) ?? undefined) : undefined}
+              hint="At least 10 characters, with letters and numbers"
+              action={
+                <Button variant="secondary" icon={<ShuffleIcon className="h-4 w-4" aria-hidden="true" />} onClick={() => setTempPassword(generateTemporaryPassword())}>
+                  New random
+                </Button>
+              }
+            />
+          )}
           <TextAreaField
             id="admin-reason"
             label="Reason"
@@ -200,7 +255,7 @@ export function StaffSheet({ member, isSelf, onClose, onUpdated, onLink }: Staff
       open
       onClose={onClose}
       title={member.name}
-      description={`${member.email} · ${member.status === 'invited' ? 'Invited, password not set yet' : deactivated ? 'Deactivated' : 'Active'}${
+      description={`${member.email} · ${member.status === 'invited' ? 'Invited, password not set yet' : deactivated ? 'Deactivated' : member.mustChangePassword ? 'Active, temporary password not changed yet' : 'Active'}${
         member.lastSignInAt ? ` · last signed in ${formatTimestamp(member.lastSignInAt)}` : ''
       }`}
       footer={
@@ -277,6 +332,11 @@ export function StaffSheet({ member, isSelf, onClose, onUpdated, onLink }: Staff
               {member.status === 'invited' && (
                 <Button variant="secondary" icon={<SendIcon className="h-4 w-4" aria-hidden="true" />} onClick={() => void resend()} disabled={busy}>
                   New setup link
+                </Button>
+              )}
+              {!deactivated && (
+                <Button variant="secondary" icon={<KeyRoundIcon className="h-4 w-4" aria-hidden="true" />} onClick={() => ask('temporary')}>
+                  Set temporary password
                 </Button>
               )}
               {member.status === 'active' && (

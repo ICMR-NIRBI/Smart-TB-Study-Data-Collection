@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -179,7 +180,13 @@ export function LoginView() {
             <h1 className="font-serif text-[32px] leading-[1.15] text-forest-900 sm:text-[38px]">Log in to your account</h1>
             <p className="mt-3 text-[15px] text-ink-soft">
               Restricted to authorised SMART-TB study personnel.{' '}
-              <span className="whitespace-nowrap">Need access? Ask your study admin.</span>
+              <span className="whitespace-nowrap">
+                Need access?{' '}
+                <Link href="/request-access" className="font-medium text-brand-700 underline-offset-2 hover:underline">
+                  Request an account
+                </Link>
+                .
+              </span>
             </p>
 
             <div className="mt-6 space-y-3" aria-live="polite">

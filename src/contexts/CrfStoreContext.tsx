@@ -80,7 +80,7 @@ export function CrfStoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
-    if (!session) {
+    if (!session || session.mustChangePassword) {
       setParticipants([]);
       setLoading(true);
       return;

@@ -6,12 +6,15 @@ import type { ModuleId } from '../types/crf';
 /** Runs an API handler for a signed-in user and turns errors into JSON responses. */
 export async function apiHandler(
   fn: (user: SessionUser) => Promise<unknown>,
-  opts: { mutating?: boolean } = {},
+  opts: { mutating?: boolean; /** Allowed while the account still has a temporary password. */ allowTemporaryPassword?: boolean } = {},
 ): Promise<NextResponse> {
   try {
     if (opts.mutating && !(await isSameOrigin())) throw new ApiError(403, 'Cross-site request rejected');
     const user = await getSessionUser();
     if (!user) throw new ApiError(401, 'Your session has ended. Please log in again.');
+    if (user.mustChangePassword && !opts.allowTemporaryPassword) {
+      throw new ApiError(403, 'Choose a new password before continuing.', { code: 'PASSWORD_CHANGE_REQUIRED' });
+    }
     const result = await fn(user);
     return NextResponse.json(result ?? { ok: true }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (err) {

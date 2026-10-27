@@ -13,7 +13,8 @@
     "db:migrate": "node --env-file-if-exists=.env.local --import tsx scripts/db/migrate.ts",
     "db:reset": "node --env-file-if-exists=.env.local --import tsx scripts/db/reset.ts",
     "db:preflight": "node --env-file-if-exists=.env.local --import tsx scripts/db/preflight.ts",
-    "db:create-admin": "node --env-file-if-exists=.env.local --import tsx scripts/db/create-admin.ts"
+    "db:create-admin": "node --env-file-if-exists=.env.local --import tsx scripts/db/create-admin.ts",
+    "db:set-temp-password": "node --env-file-if-exists=.env.local --import tsx scripts/db/set-temp-password.ts"
   },
   "dependencies": {
     "framer-motion": "^12.43.0",
