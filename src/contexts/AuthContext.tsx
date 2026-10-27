@@ -13,7 +13,7 @@ const IDLE_WARNING_MS = (IDLE_TIMEOUT_MIN - 2) * 60 * 1000;
 /** While someone is active on the page, refresh the server session at most this often. */
 const KEEPALIVE_MS = 60 * 1000;
 /** How long the loading screen stays up when someone signs in or signs out. */
-export const AUTH_TRANSITION_MS = 20 * 1000;
+export const AUTH_TRANSITION_MS = 6 * 1000;
 
 export type AuthTransition = 'signing_in' | 'signing_out' | null;
 
