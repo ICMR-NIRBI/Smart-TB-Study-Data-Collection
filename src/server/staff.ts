@@ -2,7 +2,8 @@ import { randomBytes } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { hashPassword, hashToken } from './passwords';
 import { ApiError } from './participants';
-import { ROLE_LABELS, isRoleKey, type RoleKey } from '../data/roles';
+import { roleLabel } from '../data/roles';
+import { cleanRole, customRoleLabels } from './roles';
 import { EMAIL_RE, MIN_ADMIN_REASON_LENGTH, passwordProblem } from '../utils/accountRules';
 import type { ModuleId } from '../types/crf';
 import type { Delegation, SetupLink, StaffHistoryEntry, StaffMember } from '../types/staff';
@@ -32,11 +33,6 @@ export function cleanName(raw: unknown): string {
   return name;
 }
 
-export function cleanRole(raw: unknown): RoleKey {
-  if (typeof raw !== 'string' || !isRoleKey(raw)) throw new ApiError(400, 'Choose a valid role');
-  return raw;
-}
-
 // ---------------------------------------------------------------------------
 // Reading
 // ---------------------------------------------------------------------------
@@ -55,6 +51,7 @@ interface UserRow {
 }
 
 export async function listStaff(q: Queryable): Promise<StaffMember[]> {
+  const custom = await customRoleLabels(q);
   const users = await q.query<UserRow>(
     `select id, email, display_name, role, is_admin, active, password_hash is not null as has_password, must_change_password, last_sign_in_at, created_at
        from app_users order by active desc, display_name`,
@@ -68,7 +65,8 @@ export async function listStaff(q: Queryable): Promise<StaffMember[]> {
     id: u.id,
     email: u.email,
     name: u.display_name,
-    role: isRoleKey(u.role) ? u.role : 'research_officer',
+    role: u.role,
+    roleLabel: roleLabel(u.role, custom),
     isAdmin: u.is_admin,
     status: !u.active ? 'deactivated' : u.has_password ? 'active' : 'invited',
     mustChangePassword: u.must_change_password,
@@ -114,7 +112,7 @@ const LABELS: Record<string, string> = {
   must_change_password: 'Temporary password',
 };
 
-function describe(table: string, action: string, changes: Record<string, { old: unknown; new: unknown }>, rowKey: string): string {
+function describe(table: string, action: string, changes: Record<string, { old: unknown; new: unknown }>, rowKey: string, custom: Record<string, string>): string {
   if (action === 'SETUP_LINK') return 'Setup link issued';
   if (action === 'PASSWORD_SET') return 'Password set from setup link';
   if (action === 'PASSWORD_CHANGED') return 'Password changed by the person';
@@ -124,9 +122,9 @@ function describe(table: string, action: string, changes: Record<string, { old: 
     if (action === 'DELETE') return `Removed delegation of Module ${moduleId}`;
     return `Updated delegation of Module ${moduleId}`;
   }
-  if (action === 'INSERT') return `Account created as ${ROLE_LABELS[changes.role?.new as RoleKey] ?? changes.role?.new}`;
+  if (action === 'INSERT') return `Account created as ${roleLabel(String(changes.role?.new ?? ''), custom)}`;
   const fmt = (k: string, v: unknown) =>
-    k === 'role' ? (ROLE_LABELS[v as RoleKey] ?? String(v)) : typeof v === 'boolean' ? (v ? 'yes' : 'no') : String(v ?? '');
+    k === 'role' ? roleLabel(String(v ?? ''), custom) : typeof v === 'boolean' ? (v ? 'yes' : 'no') : String(v ?? '');
   return Object.entries(changes)
     .filter(([k]) => k in LABELS)
     .map(([k, c]) => (k === 'password_changed' ? 'Password changed' : `${LABELS[k]}: ${fmt(k, c.old)} → ${fmt(k, c.new)}`))
@@ -134,6 +132,7 @@ function describe(table: string, action: string, changes: Record<string, { old: 
 }
 
 export async function staffHistory(q: Queryable, id: string): Promise<StaffHistoryEntry[]> {
+  const custom = await customRoleLabels(q);
   const { rows } = await q.query<{ at: Date; by: string | null; table_name: string; action: string; changes: Record<string, { old: unknown; new: unknown }>; reason: string | null; row_key: string }>(
     `select a.at, u.display_name as by, a.table_name, a.action, a.changes, a.reason, a.row_key
        from audit_log a left join app_users u on u.id = a.user_id
@@ -148,7 +147,7 @@ export async function staffHistory(q: Queryable, id: string): Promise<StaffHisto
       at: r.at.toISOString(),
       by: r.by ?? 'System',
       action: r.action,
-      summary: describe(r.table_name, r.action, r.changes, r.row_key),
+      summary: describe(r.table_name, r.action, r.changes, r.row_key, custom),
       reason: r.reason ?? '',
     }))
     .filter((e) => e.summary);
@@ -219,7 +218,7 @@ export async function createStaff(q: Queryable, admin: AdminActor, body: Record<
   const name = cleanName(body.name);
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
   if (!EMAIL_RE.test(email)) throw new ApiError(400, 'Enter a valid email address');
-  const role = cleanRole(body.role);
+  const role = await cleanRole(q, body.role);
   const isAdmin = body.isAdmin === true;
 
   let id: string;
@@ -247,7 +246,7 @@ export async function updateStaff(q: Queryable, admin: AdminActor, id: string, b
   const self = id === admin.id;
 
   const name = body.name === undefined ? current.name : cleanName(body.name);
-  const role = body.role === undefined ? current.role : cleanRole(body.role);
+  const role = body.role === undefined ? current.role : await cleanRole(q, body.role);
   const isAdmin = body.isAdmin === undefined ? current.isAdmin : body.isAdmin === true;
 
   if (self && role !== current.role) throw new ApiError(409, 'Ask the other administrator to change your own role');

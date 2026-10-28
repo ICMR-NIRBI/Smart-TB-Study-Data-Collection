@@ -54,6 +54,7 @@ interface ServerUser {
   roleLabel: string;
   isAdmin: boolean;
   delegations: ModuleId[];
+  entryModules: ModuleId[];
   mustChangePassword: boolean;
 }
 
@@ -61,7 +62,7 @@ function toSession(u: ServerUser): Session {
   return {
     email: u.email,
     user: { name: u.name, role: u.roleLabel },
-    actor: { role: u.role, isAdmin: u.isAdmin, delegations: u.delegations },
+    actor: { role: u.role, entryModules: u.entryModules, isAdmin: u.isAdmin, delegations: u.delegations },
     mustChangePassword: u.mustChangePassword,
   };
 }

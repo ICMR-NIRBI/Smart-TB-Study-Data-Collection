@@ -17,6 +17,8 @@ export interface StaffMember {
   email: string;
   name: string;
   role: RoleKey;
+  /** Display name of the role, including roles added by the PI. */
+  roleLabel: string;
   isAdmin: boolean;
   status: StaffStatus;
   /** Has a temporary password and has not chosen their own yet. */

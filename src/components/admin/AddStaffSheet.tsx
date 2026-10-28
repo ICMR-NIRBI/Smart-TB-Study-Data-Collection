@@ -6,20 +6,22 @@ import { InputField } from '../ui/InputField';
 import { ChoiceField } from '../ui/ChoiceField';
 import { CheckToggle } from '../ui/CheckToggle';
 import { Alert } from '../ui/Alert';
-import { ROLE_KEYS, ROLE_LABELS, ROLE_SUMMARY, type RoleKey } from '../../data/roles';
+import type { RoleKey } from '../../data/roles';
+import type { RoleInfo } from '../../types/roles';
 import { api } from '../../utils/api';
 import { EMAIL_RE } from '../../utils/accountRules';
 import type { SetupLink, StaffMember } from '../../types/staff';
 
-const ROLE_OPTIONS = ROLE_KEYS.map((r) => ({ value: r, label: ROLE_LABELS[r], description: ROLE_SUMMARY[r] }));
+const roleOptions = (roles: RoleInfo[]) => roles.map((r) => ({ value: r.key, label: r.label, description: r.description }));
 
 interface AddStaffSheetProps {
   open: boolean;
+  roles: RoleInfo[];
   onClose: () => void;
   onCreated: (member: StaffMember, link: SetupLink) => void;
 }
 
-export function AddStaffSheet({ open, onClose, onCreated }: AddStaffSheetProps) {
+export function AddStaffSheet({ open, roles, onClose, onCreated }: AddStaffSheetProps) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<RoleKey | ''>('');
@@ -95,7 +97,7 @@ export function AddStaffSheet({ open, onClose, onCreated }: AddStaffSheetProps) 
           hint="Their sign-in name. One person per account; accounts are never shared."
           error={touched ? errors.email : undefined}
         />
-        <ChoiceField id="staff-role" label="Role" options={ROLE_OPTIONS} value={role} onChange={setRole} layout="stack" required error={touched ? errors.role : undefined} />
+        <ChoiceField id="staff-role" label="Role" options={roleOptions(roles)} value={role} onChange={setRole} layout="stack" required error={touched ? errors.role : undefined} />
         <CheckToggle
           label="Study administrator"
           description="Can manage staff accounts and see participant contact details. Keep to the PI and the data manager."

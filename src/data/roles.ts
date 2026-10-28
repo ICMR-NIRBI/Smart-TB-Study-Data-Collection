@@ -4,9 +4,12 @@ import type { ModuleId } from '../types/crf';
  * Who may enter which module. Proposed split, pending PI confirmation; the server enforces exactly these rules.
  * Everyone signed in can view all study data except participant contact details.
  */
-export type RoleKey = 'pi' | 'research_officer' | 'phlebotomist' | 'pk_scientist' | 'data_manager';
+export type BuiltInRole = 'pi' | 'research_officer' | 'phlebotomist' | 'pk_scientist' | 'data_manager';
 
-export const ROLE_LABELS: Record<RoleKey, string> = {
+/** A built-in role, or the key of a role the PI or data manager added (see server/roles.ts). */
+export type RoleKey = string;
+
+export const ROLE_LABELS: Record<BuiltInRole, string> = {
   pi: 'Principal Investigator',
   research_officer: 'Research Officer',
   phlebotomist: 'Phlebotomist',
@@ -15,7 +18,7 @@ export const ROLE_LABELS: Record<RoleKey, string> = {
 };
 
 /** Modules each role can fill in. */
-const ROLE_ENTRY: Record<RoleKey, ModuleId[]> = {
+const ROLE_ENTRY: Record<BuiltInRole, ModuleId[]> = {
   pi: [2, 9, 10],
   research_officer: [1, 2, 3, 4, 7, 8, 9, 10],
   phlebotomist: [5, 9],
@@ -29,21 +32,28 @@ const PI_SIGN_OFF: ModuleId[] = [2, 10];
 
 export interface Actor {
   role: RoleKey;
+  /** Modules the role may fill in. Sent by the server; built-in roles fall back to their fixed list. */
+  entryModules?: ModuleId[];
   isAdmin: boolean;
   /** Extra modules granted through the delegation log. */
   delegations: ModuleId[];
 }
 
-export function isRoleKey(v: string): v is RoleKey {
+export function isRoleKey(v: string): v is BuiltInRole {
   return v in ROLE_LABELS;
 }
 
+/** Label for any role key; a removed or unknown role shows its key. */
+export function roleLabel(key: string, custom?: Record<string, string>): string {
+  return isRoleKey(key) ? ROLE_LABELS[key] : (custom?.[key] ?? key);
+}
+
 export function roleModules(role: RoleKey): ModuleId[] {
-  return ROLE_ENTRY[role];
+  return isRoleKey(role) ? ROLE_ENTRY[role] : [];
 }
 
 export function canEnterModule(a: Actor, id: ModuleId): boolean {
-  return ROLE_ENTRY[a.role].includes(id) || a.delegations.includes(id);
+  return (a.entryModules ?? roleModules(a.role)).includes(id) || a.delegations.includes(id);
 }
 
 export function canCompleteModule(a: Actor, id: ModuleId): boolean {
@@ -65,7 +75,7 @@ export function canDiscontinue(a: Actor): boolean {
 }
 
 /** One-line summary of what a role does, shown on the staff admin page. */
-export const ROLE_SUMMARY: Record<RoleKey, string> = {
+export const ROLE_SUMMARY: Record<BuiltInRole, string> = {
   pi: 'Signs off eligibility (Module 2) and closeout (Module 10); can correct any module with a reason',
   research_officer: 'Enters Modules 1–4, 7, 8 and adverse events; prepares Modules 2 and 10 for PI sign-off',
   phlebotomist: 'Enters Day 8 PK sampling (Module 5) and adverse events',
@@ -73,7 +83,7 @@ export const ROLE_SUMMARY: Record<RoleKey, string> = {
   data_manager: 'Reviews all data; can correct any locked module with a reason; no first entry or sign-off',
 };
 
-export const ROLE_KEYS = Object.keys(ROLE_LABELS) as RoleKey[];
+export const ROLE_KEYS = Object.keys(ROLE_LABELS) as BuiltInRole[];
 
 /**
  * Phone and address: PI and admin always; whoever enters Module 1 only while it is open for entry,

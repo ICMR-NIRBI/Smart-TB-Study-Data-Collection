@@ -8,14 +8,15 @@ import { CheckToggle } from '../ui/CheckToggle';
 import { TextAreaField } from '../ui/TextAreaField';
 import { Alert } from '../ui/Alert';
 import { MODULES } from '../../data/modules';
-import { ROLE_KEYS, ROLE_LABELS, ROLE_SUMMARY, roleModules, type RoleKey } from '../../data/roles';
+import { roleModules, type RoleKey } from '../../data/roles';
+import type { RoleInfo } from '../../types/roles';
 import { api } from '../../utils/api';
 import { MIN_ADMIN_REASON_LENGTH as MIN_REASON, generateTemporaryPassword, passwordProblem } from '../../utils/accountRules';
 import { formatDMY, formatTimestamp, todayISO } from '../../utils/dates';
 import type { ModuleId } from '../../types/crf';
 import type { SetupLink, StaffHistoryEntry, StaffMember } from '../../types/staff';
 
-const ROLE_OPTIONS = ROLE_KEYS.map((r) => ({ value: r, label: ROLE_LABELS[r], description: ROLE_SUMMARY[r] }));
+const roleOptions = (roles: RoleInfo[]) => roles.map((r) => ({ value: r.key, label: r.label, description: r.description }));
 
 type PendingKind = 'details' | 'delegations' | 'deactivate' | 'reactivate' | 'reset' | 'temporary';
 
@@ -45,6 +46,7 @@ const PENDING: Record<PendingKind, { title: string; confirm: string; danger?: bo
 
 interface StaffSheetProps {
   member: StaffMember | null;
+  roles: RoleInfo[];
   isSelf: boolean;
   onClose: () => void;
   onUpdated: (member: StaffMember) => void;
@@ -60,7 +62,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-export function StaffSheet({ member, isSelf, onClose, onUpdated, onLink }: StaffSheetProps) {
+export function StaffSheet({ member, roles, isSelf, onClose, onUpdated, onLink }: StaffSheetProps) {
   const [name, setName] = useState('');
   const [role, setRole] = useState<RoleKey>('research_officer');
   const [isAdmin, setIsAdmin] = useState(false);
@@ -106,7 +108,7 @@ export function StaffSheet({ member, isSelf, onClose, onUpdated, onLink }: Staff
   if (!member) return <Sheet open={false} onClose={onClose} title="" />;
 
   const deactivated = member.status === 'deactivated';
-  const included = roleModules(role);
+  const included = roles.find((r) => r.key === role)?.modules ?? roleModules(role);
 
   const ask = (kind: PendingKind) => {
     setPending(kind);
@@ -270,7 +272,7 @@ export function StaffSheet({ member, isSelf, onClose, onUpdated, onLink }: Staff
 
         <Section title="Account">
           <InputField id="edit-name" label="Full name" value={name} onChange={setName} readOnly={deactivated} />
-          <ChoiceField id="edit-role" label="Role" options={ROLE_OPTIONS} value={role} onChange={setRole} layout="stack" readOnly={isSelf || deactivated} />
+          <ChoiceField id="edit-role" label="Role" options={roleOptions(roles)} value={role} onChange={setRole} layout="stack" readOnly={isSelf} />
           <CheckToggle
             label="Study administrator"
             description="Manages staff accounts and sees participant contact details"

@@ -1,16 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeftIcon, ChevronRightIcon, Loader2Icon, SearchIcon, ShieldAlertIcon, UserPlusIcon } from 'lucide-react';
+import { ArrowLeftIcon, ChevronRightIcon, Loader2Icon, SearchIcon, ShieldAlertIcon, TagsIcon, UserPlusIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { AccessRequestSheet } from '../components/admin/AccessRequestSheet';
 import { AddStaffSheet } from '../components/admin/AddStaffSheet';
+import { RolesSheet } from '../components/admin/RolesSheet';
 import { StaffSheet } from '../components/admin/StaffSheet';
 import { SetupLinkSheet } from '../components/admin/SetupLinkSheet';
 import { useAuth } from '../contexts/AuthContext';
-import { ROLE_LABELS } from '../data/roles';
 import { api } from '../utils/api';
 import { formatTimestamp } from '../utils/dates';
 import type { AccessRequest } from '../types/accessRequests';
+import type { RoleInfo } from '../types/roles';
 import type { SetupLink, StaffMember, StaffStatus } from '../types/staff';
 
 type Filter = 'all' | StaffStatus;
@@ -41,6 +42,9 @@ export function AdminView() {
   const [requests, setRequests] = useState<AccessRequest[]>([]);
   const [requestId, setRequestId] = useState<string | null>(null);
   const isPi = session?.actor.role === 'pi';
+  const canManageRoles = isPi || session?.actor.role === 'data_manager';
+  const [roles, setRoles] = useState<RoleInfo[]>([]);
+  const [rolesOpen, setRolesOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -61,9 +65,20 @@ export function AdminView() {
     }
   }, []);
 
+  const loadRoles = useCallback(async () => {
+    try {
+      setRoles((await api<{ roles: RoleInfo[] }>('/api/admin/roles')).roles);
+    } catch {
+      /* the lists fall back to showing the role key */
+    }
+  }, []);
+
   useEffect(() => {
-    if (session?.actor.isAdmin) void load();
-  }, [session?.actor.isAdmin, load]);
+    if (session?.actor.isAdmin) {
+      void load();
+      void loadRoles();
+    }
+  }, [session?.actor.isAdmin, load, loadRoles]);
 
   useEffect(() => {
     if (isPi) void loadRequests();
@@ -178,7 +193,7 @@ export function AdminView() {
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold text-ink">{r.name}</p>
                         <p className="truncate text-sm text-ink-muted">{r.email}</p>
-                        <p className="mt-1 text-sm text-ink-soft">Asked for {ROLE_LABELS[r.requestedRole]}</p>
+                        <p className="mt-1 text-sm text-ink-soft">Asked for {roles.find((x) => x.key === r.requestedRole)?.label ?? r.requestedRole}</p>
                         <p className="text-xs text-ink-muted">Sent {formatTimestamp(r.createdAt)}</p>
                       </div>
                       <span className="shrink-0 text-sm font-semibold text-brand-700">Review</span>
@@ -244,7 +259,7 @@ export function AdminView() {
                       </div>
                       <p className="truncate text-sm text-ink-muted">{s.email}</p>
                       <p className="mt-1 text-sm text-ink-soft">
-                        {ROLE_LABELS[s.role]}
+                        {s.roleLabel}
                         {s.delegations.length > 0 && ` · extra: ${s.delegations.map((d) => `M${d.moduleId}`).join(', ')}`}
                       </p>
                       <p className="text-xs text-ink-muted">{s.lastSignInAt ? `Last signed in ${formatTimestamp(s.lastSignInAt)}` : 'Never signed in'}</p>
@@ -258,6 +273,16 @@ export function AdminView() {
         )}
       </main>
 
+      {canManageRoles && (
+        <button
+          type="button"
+          onClick={() => setRolesOpen(true)}
+          className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-[10.5rem] z-30 flex min-h-[56px] items-center gap-2 rounded-2xl border border-line-strong bg-white pl-4 pr-5 font-semibold text-ink shadow-lg transition-[background-color,transform] duration-150 ease-out hover:bg-canvas active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 lg:right-[calc(50%_-_14.5rem)]"
+        >
+          <TagsIcon className="h-5 w-5" aria-hidden="true" />
+          Roles
+        </button>
+      )}
       <button
         type="button"
         onClick={() => setAdding(true)}
@@ -267,11 +292,22 @@ export function AdminView() {
         Add staff
       </button>
 
+      <RolesSheet
+        open={rolesOpen}
+        roles={roles}
+        onClose={() => setRolesOpen(false)}
+        onChanged={(message) => {
+          toast.success(message);
+          void loadRoles();
+        }}
+      />
       <AddStaffSheet
         open={adding}
+        roles={roles}
         onClose={() => setAdding(false)}
         onCreated={(member, link) => {
           upsert(member);
+          void loadRoles();
           setAdding(false);
           setLinkFor({ member, link });
           toast.success(`${member.name} added`);
@@ -279,10 +315,12 @@ export function AdminView() {
       />
       <StaffSheet
         member={open}
+        roles={roles}
         isSelf={!!open && open.id === selfId}
         onClose={() => setOpenId(null)}
         onUpdated={(m) => {
           upsert(m);
+          void loadRoles();
           toast.success('Saved');
         }}
         onLink={(member, link) => {
@@ -291,6 +329,7 @@ export function AdminView() {
         }}
       />
       <AccessRequestSheet
+        roles={roles}
         request={requests.find((r) => r.id === requestId) ?? null}
         onClose={() => setRequestId(null)}
         onDecided={(r, outcome) => {
@@ -298,6 +337,7 @@ export function AdminView() {
           toast.success(outcome === 'approved' ? `${r.name} can now sign in` : 'Request rejected');
           void loadRequests();
           void load();
+          void loadRoles();
         }}
       />
       <SetupLinkSheet member={linkFor?.member ?? null} link={linkFor?.link ?? null} onClose={() => setLinkFor(null)} />

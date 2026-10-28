@@ -5,22 +5,24 @@ import { Button } from '../ui/Button';
 import { ChoiceField } from '../ui/ChoiceField';
 import { TextAreaField } from '../ui/TextAreaField';
 import { Alert } from '../ui/Alert';
-import { ROLE_KEYS, ROLE_LABELS, ROLE_SUMMARY, type RoleKey } from '../../data/roles';
+import type { RoleKey } from '../../data/roles';
+import type { RoleInfo } from '../../types/roles';
 import { api } from '../../utils/api';
 import { MIN_ADMIN_REASON_LENGTH as MIN_REASON } from '../../utils/accountRules';
 import { formatTimestamp } from '../../utils/dates';
 import type { AccessRequest } from '../../types/accessRequests';
 
-const ROLE_OPTIONS = ROLE_KEYS.map((r) => ({ value: r, label: ROLE_LABELS[r], description: ROLE_SUMMARY[r] }));
+const roleOptions = (roles: RoleInfo[]) => roles.map((r) => ({ value: r.key, label: r.label, description: r.description }));
 
 interface AccessRequestSheetProps {
   request: AccessRequest | null;
+  roles: RoleInfo[];
   onClose: () => void;
   /** Called after the PI approves or rejects, so the lists can reload. */
   onDecided: (request: AccessRequest, outcome: 'approved' | 'rejected') => void;
 }
 
-export function AccessRequestSheet({ request, onClose, onDecided }: AccessRequestSheetProps) {
+export function AccessRequestSheet({ request, roles, onClose, onDecided }: AccessRequestSheetProps) {
   const [role, setRole] = useState<RoleKey>('research_officer');
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState('');
@@ -42,6 +44,7 @@ export function AccessRequestSheet({ request, onClose, onDecided }: AccessReques
   if (!request) return <Sheet open={false} onClose={onClose} title="" />;
 
   const pending = request.status === 'pending';
+  const labelOf = (key: string) => roles.find((r) => r.key === key)?.label ?? key;
   const decide = async (action: 'approve' | 'reject') => {
     setTouched(true);
     if (busy || (action === 'reject' && reason.trim().length < MIN_REASON)) return;
@@ -61,7 +64,7 @@ export function AccessRequestSheet({ request, onClose, onDecided }: AccessReques
     <dl className="space-y-3 rounded-2xl border border-line p-4 text-sm">
       <div>
         <dt className="text-ink-muted">Asked for</dt>
-        <dd className="font-medium text-ink">{ROLE_LABELS[request.requestedRole]}</dd>
+        <dd className="font-medium text-ink">{labelOf(request.requestedRole)}</dd>
       </div>
       <div>
         <dt className="text-ink-muted">What they wrote</dt>
@@ -96,7 +99,7 @@ export function AccessRequestSheet({ request, onClose, onDecided }: AccessReques
         <div className="space-y-4">
           {details}
           <Alert tone={request.status === 'approved' ? 'ok' : 'neutral'} title={{ approved: 'Approved', rejected: 'Rejected', expired: 'Expired', pending: '' }[request.status]}>
-            {request.status === 'approved' && `${request.decidedBy} approved this as ${request.decisionRole ? ROLE_LABELS[request.decisionRole] : 'staff'} on ${formatTimestamp(request.decidedAt)}.`}
+            {request.status === 'approved' && `${request.decidedBy} approved this as ${request.decisionRole ? labelOf(request.decisionRole) : 'staff'} on ${formatTimestamp(request.decidedAt)}.`}
             {request.status === 'rejected' && `${request.decidedBy} rejected this on ${formatTimestamp(request.decidedAt)}: “${request.decisionReason}”`}
             {request.status === 'expired' && 'It was not reviewed in time. The person can send a new request.'}
           </Alert>
@@ -163,7 +166,7 @@ export function AccessRequestSheet({ request, onClose, onDecided }: AccessReques
         <ChoiceField
           id="approve-role"
           label="Role to give"
-          options={ROLE_OPTIONS}
+          options={roleOptions(roles)}
           value={role}
           onChange={setRole}
           layout="stack"

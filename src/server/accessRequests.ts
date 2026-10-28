@@ -1,7 +1,8 @@
 import type { PoolClient } from 'pg';
 import { hashPassword } from './passwords';
 import { ApiError } from './participants';
-import { cleanName, cleanRole, requireReason } from './staff';
+import { cleanName, requireReason } from './staff';
+import { cleanRole } from './roles';
 import { isRoleKey, type RoleKey } from '../data/roles';
 import { EMAIL_RE, passwordProblem } from '../utils/accountRules';
 import type { AccessRequest, AccessRequestStatus } from '../types/accessRequests';
@@ -38,7 +39,9 @@ export async function submitAccessRequest(q: Queryable, body: Record<string, unk
   const name = cleanName(body.name);
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
   if (!EMAIL_RE.test(email) || email.length > 120) throw new ApiError(400, 'Enter a valid email address');
-  const requestedRole = cleanRole(body.role);
+  // The public form only offers the built-in roles; the PI can give any role when approving.
+  if (typeof body.role !== 'string' || !isRoleKey(body.role)) throw new ApiError(400, 'Choose a valid role');
+  const requestedRole = body.role;
   const note = typeof body.note === 'string' ? body.note.trim() : '';
   if (note.length < MIN_NOTE_LENGTH) throw new ApiError(400, 'Say briefly who you are and why you need access');
   if (note.length > MAX_NOTE_LENGTH) throw new ApiError(400, `Keep the note under ${MAX_NOTE_LENGTH} characters`);
@@ -77,7 +80,7 @@ interface RequestRow {
   decision_reason: string | null;
 }
 
-const asRole = (r: string | null): RoleKey | '' => (r && isRoleKey(r) ? r : '');
+const asRole = (r: string | null): RoleKey | '' => r ?? '';
 
 /** Pending requests first, then decisions from the last 30 days. */
 export async function listAccessRequests(q: Queryable, actor: PiActor): Promise<AccessRequest[]> {
@@ -125,7 +128,7 @@ async function lockPending(q: Queryable, id: string) {
 export async function approveAccessRequest(q: Queryable, actor: PiActor, id: string, body: Record<string, unknown>): Promise<void> {
   assertPi(actor);
   const row = await lockPending(q, id);
-  const role = cleanRole(body.role ?? row.requested_role);
+  const role = await cleanRole(q, body.role ?? row.requested_role);
   if (!row.password_hash) throw new ApiError(409, 'This request has no password stored. Reject it and ask the person to submit again.');
 
   let userId: string;

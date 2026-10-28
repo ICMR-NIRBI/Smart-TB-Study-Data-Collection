@@ -4,7 +4,8 @@ import { getPool, withTransaction } from './db';
 import { hashPassword, hashToken, verifyPassword } from './passwords';
 import { ApiError } from './participants';
 import { LOGIN_LOCKOUT_MS, MAX_LOGIN_ATTEMPTS, passwordProblem } from '../utils/accountRules';
-import { ROLE_LABELS, isRoleKey, type Actor, type RoleKey } from '../data/roles';
+import { roleLabel, type Actor } from '../data/roles';
+import { customRoleLabels, roleAccess } from './roles';
 import type { ModuleId } from '../types/crf';
 
 /*
@@ -53,13 +54,14 @@ async function loadDelegations(userId: string): Promise<ModuleId[]> {
 }
 
 async function toSessionUser(row: UserRow): Promise<SessionUser> {
-  const role: RoleKey = isRoleKey(row.role) ? row.role : 'research_officer';
+  const access = await roleAccess(getPool(), row.role);
   return {
     id: row.id,
     email: row.email,
     name: row.display_name,
-    role,
-    roleLabel: ROLE_LABELS[role],
+    role: row.role,
+    roleLabel: access.label,
+    entryModules: access.modules,
     isAdmin: row.is_admin,
     delegations: await loadDelegations(row.id),
     mustChangePassword: row.must_change_password,
@@ -148,10 +150,11 @@ export async function listTestAccounts(): Promise<{ email: string; name: string;
     "select * from app_users where active and email like '%' || $1 order by is_admin desc, email",
     [TEST_ACCOUNT_DOMAIN],
   );
+  const custom = await customRoleLabels(getPool());
   return rows.map((r) => ({
     email: r.email,
     name: r.display_name,
-    roleLabel: isRoleKey(r.role) ? ROLE_LABELS[r.role] : r.role,
+    roleLabel: roleLabel(r.role, custom),
     isAdmin: r.is_admin,
   }));
 }
