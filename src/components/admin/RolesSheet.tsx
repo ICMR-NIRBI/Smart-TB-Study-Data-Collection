@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LockIcon, PlusIcon, Trash2Icon } from 'lucide-react';
+import { LockIcon, PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import { Sheet } from '../ui/Sheet';
 import { Button } from '../ui/Button';
 import { InputField } from '../ui/InputField';
@@ -25,12 +25,14 @@ export function RolesSheet({ open, roles, onClose, onChanged }: RolesSheetProps)
   const [modules, setModules] = useState<ModuleId[]>([]);
   const [touched, setTouched] = useState(false);
   const [removing, setRemoving] = useState<RoleInfo | null>(null);
+  const [editing, setEditing] = useState<RoleInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const reset = () => {
     setAdding(false);
     setRemoving(null);
+    setEditing(null);
     setLabel('');
     setDescription('');
     setModules([]);
@@ -61,6 +63,22 @@ export function RolesSheet({ open, roles, onClose, onChanged }: RolesSheetProps)
     }
   };
 
+  const saveModules = async () => {
+    if (!editing || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/api/admin/roles/${editing.key}`, { method: 'PATCH', body: { modules } });
+      const name = editing.label;
+      reset();
+      onChanged(`Modules for “${name}” saved`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the modules');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const remove = async (role: RoleInfo) => {
     if (busy) return;
     setBusy(true);
@@ -76,6 +94,43 @@ export function RolesSheet({ open, roles, onClose, onChanged }: RolesSheetProps)
       setBusy(false);
     }
   };
+
+  if (editing) {
+    const changed = JSON.stringify(modules) !== JSON.stringify(editing.modules);
+    return (
+      <Sheet
+        open={open}
+        onClose={() => setEditing(null)}
+        title={`Modules for ${editing.label}`}
+        description={editing.members > 0 ? `Applies to the ${editing.members} ${editing.members === 1 ? 'person' : 'people'} with this role, from their next action.` : 'Nobody has this role yet.'}
+        footer={
+          <>
+            <Button variant="secondary" className="flex-1" onClick={() => setEditing(null)} disabled={busy}>
+              Back
+            </Button>
+            <Button className="flex-[1.6]" onClick={() => void saveModules()} disabled={busy || !changed}>
+              {busy ? 'Saving…' : 'Save modules'}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {error && <Alert tone="danger" title={error} />}
+          <ul className="space-y-2">
+            {MODULES.map((m) => (
+              <li key={m.id}>
+                <CheckToggle
+                  label={`Module ${m.id} · ${m.short}`}
+                  checked={modules.includes(m.id)}
+                  onChange={(on) => setModules((cur) => (on ? [...cur, m.id].sort((a, b) => a - b) : cur.filter((x) => x !== m.id)))}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+      </Sheet>
+    );
+  }
 
   if (adding) {
     return (
@@ -156,6 +211,11 @@ export function RolesSheet({ open, roles, onClose, onChanged }: RolesSheetProps)
                   <p className="mt-0.5 text-sm text-ink-soft">{r.description}</p>
                   <p className="mt-1 text-xs text-ink-muted">{r.members === 0 ? 'Nobody has this role' : `${r.members} ${r.members === 1 ? 'person' : 'people'}`}</p>
                 </div>
+                {!r.builtin && (
+                  <Button variant="secondary" icon={<PencilIcon className="h-4 w-4" aria-hidden="true" />} onClick={() => { setError(null); setModules(r.modules); setEditing(r); }} disabled={busy}>
+                    Modules
+                  </Button>
+                )}
                 {!r.builtin && (
                   <Button variant="danger-outline" icon={<Trash2Icon className="h-4 w-4" aria-hidden="true" />} onClick={() => { setError(null); setRemoving(r); }} disabled={busy}>
                     Remove

@@ -14,17 +14,21 @@ interface SheetProps {
 export function Sheet({ open, onClose, title, description, children, footer }: SheetProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  // Kept in a ref so a parent re-render (a new onClose each time) does not re-run the effect below.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') onCloseRef.current();
     };
     document.addEventListener('keydown', onKey);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const t = window.setTimeout(() => {
-      const target = panelRef.current?.querySelector<HTMLElement>('textarea, input, [data-autofocus]');
+      // Only an element that asks for it gets focus; fields do not, so the phone keyboard opens when a field is tapped.
+      const target = panelRef.current?.querySelector<HTMLElement>('[data-autofocus]');
       if (target) target.focus();
       else panelRef.current?.focus();
     }, 60);
@@ -33,7 +37,7 @@ export function Sheet({ open, onClose, title, description, children, footer }: S
       document.body.style.overflow = prevOverflow;
       window.clearTimeout(t);
     };
-  }, [open, onClose]);
+  }, [open]);
 
   return (
     <AnimatePresence>

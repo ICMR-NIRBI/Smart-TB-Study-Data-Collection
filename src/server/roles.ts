@@ -95,6 +95,20 @@ export async function createRole(q: Queryable, actor: { id: string; role: string
   return { key, label, description: description || summarise(modules as ModuleId[]), builtin: false, modules: modules as ModuleId[], members: 0 };
 }
 
+/** Changes which modules a custom role fills in. Takes effect at the holders' next request. */
+export async function updateRoleModules(q: Queryable, actor: { id: string; role: string }, key: string, raw: unknown): Promise<void> {
+  assertRoleManager(actor);
+  if (isRoleKey(key)) throw new ApiError(409, 'The built-in roles cannot be changed');
+  if (!Array.isArray(raw)) throw new ApiError(400, 'Choose the modules this role fills in');
+  const ids = new Set<number>();
+  for (const m of raw) {
+    if (!MODULES.some((d) => d.id === m)) throw new ApiError(400, 'Invalid module');
+    ids.add(m as number);
+  }
+  const { rowCount } = await q.query('update roles set modules = $2 where key = $1 and deleted_at is null', [key, [...ids].sort((a, b) => a - b)]);
+  if (!rowCount) throw new ApiError(404, 'Role not found');
+}
+
 /** Removes a custom role. Refused while anyone still holds it, so nobody is left without a valid role. */
 export async function deleteRole(q: Queryable, actor: { id: string; role: string }, key: string): Promise<void> {
   assertRoleManager(actor);
