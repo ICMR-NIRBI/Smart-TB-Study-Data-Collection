@@ -11,7 +11,7 @@ interface ModuleActionBarProps {
   recordLocked: boolean;
   errorCount: number;
   attempted: boolean;
-  /** Module is reachable only because preview mode lifted its lock. */
+  /** Module cannot be filled in yet; it can still be opened to read. */
   previewOnly?: boolean;
   /** The signed-in role may fill in this module. */
   canEnter: boolean;
@@ -97,15 +97,16 @@ export function ModuleActionBar({
     );
   }
 
-  if (previewOnly) {
+  // A role that never enters this module gets the role message below; this one is for waiting on an earlier module.
+  if (previewOnly && (recordLocked || canEnter)) {
     return (
       <div className={wrapper}>
         {nav}
         <p className="flex items-center gap-2 py-1 text-sm text-ink-muted">
           <LockIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
           {recordLocked
-            ? 'Preview only — record closed, read-only'
-            : `Preview only${currentModule ? ` — complete Module ${currentModule} first to lock this one` : ''}`}
+            ? 'Record closed · read-only'
+            : `View only${currentModule ? ` — complete Module ${currentModule} first, then this one can be filled in` : ''}`}
         </p>
       </div>
     );

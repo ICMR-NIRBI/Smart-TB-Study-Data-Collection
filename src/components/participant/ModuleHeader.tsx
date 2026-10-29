@@ -12,7 +12,7 @@ interface ModuleHeaderProps {
 export function ModuleHeader({ moduleId, access, editing, previewOnly }: ModuleHeaderProps) {
   const def = getModuleDef(moduleId);
   const chip = previewOnly
-    ? { label: 'Preview — not yet unlocked', cls: 'bg-lock-100 text-lock-600 ring-line' }
+    ? { label: 'Not open yet — view only', cls: 'bg-lock-100 text-lock-600 ring-line' }
     : editing
     ? { label: 'Editing — reason logged', cls: 'bg-warn-50 text-warn-700 ring-warn-200' }
     : access === 'complete'

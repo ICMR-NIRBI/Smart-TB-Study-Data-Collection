@@ -64,15 +64,14 @@ export function ModuleStepper({ participant, selected, onSelect, orientation }: 
                     itemRefs.current[m.id] = el;
                   }}
                   type="button"
-                  onClick={() => !locked && onSelect(m.id)}
-                  aria-disabled={locked || undefined}
+                  onClick={() => onSelect(m.id)}
                   aria-current={isSel ? 'step' : undefined}
-                  aria-label={`Module ${m.id}, ${m.short}: ${locked ? lockReason(participant, m.id) : STATE_TEXT[access]}`}
+                  aria-label={`Module ${m.id}, ${m.short}: ${locked ? `${lockReason(participant, m.id)}, view only` : STATE_TEXT[access]}`}
                   className={`flex h-11 items-center gap-2 whitespace-nowrap rounded-full border pl-1.5 pr-3.5 text-sm font-medium transition-[background-color,border-color,color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 ${
                     isSel
                       ? 'border-brand-600 bg-brand-50 text-brand-800'
                       : locked
-                        ? 'cursor-not-allowed border-line bg-white text-lock-500'
+                        ? 'border-line bg-white text-lock-500 hover:border-line-strong'
                         : 'border-line bg-white text-ink-soft hover:border-line-strong'
                   }`}
                 >
@@ -98,17 +97,16 @@ export function ModuleStepper({ participant, selected, onSelect, orientation }: 
             access === 'complete'
               ? `Completed ${formatTimestamp(meta.completedAt).slice(0, 10)}${meta.editing ? ' · editing' : ''}`
               : locked || isPreviewOnly(participant, m.id)
-                ? lockReason(participant, m.id)
+                ? `${lockReason(participant, m.id)} · view only`
                 : STATE_TEXT[access];
           return (
             <li key={m.id}>
               <button
                 type="button"
-                onClick={() => !locked && onSelect(m.id)}
-                aria-disabled={locked || undefined}
+                onClick={() => onSelect(m.id)}
                 aria-current={isSel ? 'step' : undefined}
                 className={`flex min-h-[56px] w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 ${
-                  isSel ? 'bg-white shadow-sm ring-1 ring-brand-200' : locked ? 'cursor-not-allowed' : 'hover:bg-white'
+                  isSel ? 'bg-white shadow-sm ring-1 ring-brand-200' : 'hover:bg-white'
                 }`}
               >
                 <Indicator access={access} id={m.id} />

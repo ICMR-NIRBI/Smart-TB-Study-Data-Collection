@@ -34,9 +34,9 @@ export function strictAccess(p: Participant, id: ModuleId): ModuleAccess {
   return getCurrentModule(p) === id ? 'current' : 'locked';
 }
 
-/** True when a module is only reachable because preview mode lifted its lock (it can be viewed, not locked). */
+/** True when a module cannot be filled in yet (earlier modules come first, or the record is closed). Anyone can still open it to read. */
 export function isPreviewOnly(p: Participant, id: ModuleId): boolean {
-  return PREVIEW_MODE && strictAccess(p, id) === 'locked';
+  return strictAccess(p, id) === 'locked';
 }
 
 export function getAccess(p: Participant, id: ModuleId): ModuleAccess {

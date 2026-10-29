@@ -19,7 +19,7 @@ export const ROLE_LABELS: Record<BuiltInRole, string> = {
 
 /** Modules each role can fill in. */
 const ROLE_ENTRY: Record<BuiltInRole, ModuleId[]> = {
-  pi: [2, 9, 10],
+  pi: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
   research_officer: [1, 2, 3, 4, 7, 8, 9, 10],
   phlebotomist: [5, 9],
   pk_scientist: [6],
@@ -76,7 +76,7 @@ export function canDiscontinue(a: Actor): boolean {
 
 /** One-line summary of what a role does, shown on the staff admin page. */
 export const ROLE_SUMMARY: Record<BuiltInRole, string> = {
-  pi: 'Signs off eligibility (Module 2) and closeout (Module 10); can correct any module with a reason',
+  pi: 'Can enter every module and enroll participants; signs off eligibility (Module 2) and closeout (Module 10); can correct any module with a reason',
   research_officer: 'Enters Modules 1–4, 7, 8 and adverse events; prepares Modules 2 and 10 for PI sign-off',
   phlebotomist: 'Enters Day 8 PK sampling (Module 5) and adverse events',
   pk_scientist: 'Enters bioanalytical results and PK (Module 6)',

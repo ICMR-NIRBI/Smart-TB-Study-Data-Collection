@@ -34,8 +34,8 @@ export function useParticipantView(uid: string) {
 
   const current: ModuleId = participant ? getCurrentModule(participant) : 1;
   const requested = Number(params.get('m'));
-  const selected: ModuleId =
-    participant && isModuleId(requested) && getAccess(participant, requested) !== 'locked' ? requested : current;
+  // Every role can open every module to read it; what a role may fill in is decided separately (canEnter) and by the server.
+  const selected: ModuleId = participant && isModuleId(requested) ? requested : current;
   const access = participant ? getAccess(participant, selected) : 'locked';
   const meta = participant?.meta[selected];
   const editing = !!meta?.editing;
