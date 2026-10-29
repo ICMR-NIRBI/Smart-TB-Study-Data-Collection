@@ -11,6 +11,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { api } from '../utils/api';
 import { formatTimestamp } from '../utils/dates';
 import type { AccessRequest } from '../types/accessRequests';
+import type { StaffInvite } from '../types/invites';
 import type { RoleInfo } from '../types/roles';
 import type { SetupLink, StaffMember, StaffStatus } from '../types/staff';
 
@@ -37,7 +38,8 @@ export function AdminView() {
   const [filter, setFilter] = useState<Filter>('all');
   const [adding, setAdding] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
-  const [linkFor, setLinkFor] = useState<{ member: StaffMember; link: SetupLink } | null>(null);
+  const [linkFor, setLinkFor] = useState<{ member: StaffMember | null; invite: StaffInvite | null; link: SetupLink } | null>(null);
+  const [invites, setInvites] = useState<StaffInvite[]>([]);
   const [selfId, setSelfId] = useState<string | null>(null);
   const [requests, setRequests] = useState<AccessRequest[]>([]);
   const [requestId, setRequestId] = useState<string | null>(null);
@@ -65,6 +67,24 @@ export function AdminView() {
     }
   }, []);
 
+  const loadInvites = useCallback(async () => {
+    try {
+      setInvites((await api<{ invites: StaffInvite[] }>('/api/admin/invites')).invites);
+    } catch {
+      /* the staff list still works without the invitations */
+    }
+  }, []);
+
+  const revokeInvite = async (invite: StaffInvite) => {
+    try {
+      await api(`/api/admin/invites/${invite.id}`, { method: 'DELETE' });
+      toast.success('Invitation withdrawn');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not withdraw the invitation');
+    }
+    void loadInvites();
+  };
+
   const loadRoles = useCallback(async () => {
     try {
       setRoles((await api<{ roles: RoleInfo[] }>('/api/admin/roles')).roles);
@@ -77,8 +97,9 @@ export function AdminView() {
     if (session?.actor.isAdmin) {
       void load();
       void loadRoles();
+      void loadInvites();
     }
-  }, [session?.actor.isAdmin, load, loadRoles]);
+  }, [session?.actor.isAdmin, load, loadRoles, loadInvites]);
 
   useEffect(() => {
     if (isPi) void loadRequests();
@@ -128,7 +149,7 @@ export function AdminView() {
             </Link>
             <div className="min-w-0">
               <h1 className="text-2xl font-semibold tracking-tight text-ink">Staff accounts</h1>
-              <p className="text-sm text-ink-muted">Accounts come from invitations or approved requests. They are deactivated, never deleted.</p>
+              <p className="text-sm text-ink-muted">Accounts come from invitations or approved requests. An account with no records can be deleted; otherwise deactivate it.</p>
             </div>
           </div>
           <div className="relative mt-4">
@@ -223,6 +244,36 @@ export function AdminView() {
             )}
           </section>
         )}
+        {invites.length > 0 && (
+          <section aria-labelledby="invites-heading" className="mb-6">
+            <h2 id="invites-heading" className="mb-2 text-sm font-semibold text-ink">
+              Open invitations
+              <span className="ml-2 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700">{invites.length}</span>
+            </h2>
+            <ul className="space-y-2">
+              {invites.map((i) => (
+                <li key={i.id} className="flex items-center gap-3 rounded-2xl border border-line bg-white p-4">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-ink">
+                      {i.roleLabel}
+                      {i.isAdmin && <span className="ml-2 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700">Admin</span>}
+                    </p>
+                    <p className="text-xs text-ink-muted">
+                      Made {formatTimestamp(i.createdAt)} by {i.createdBy} · ends {formatTimestamp(i.expiresAt)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void revokeInvite(i)}
+                    className="min-h-[44px] shrink-0 rounded-xl border border-danger-200 px-3 text-sm font-semibold text-danger-700 hover:bg-danger-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+                  >
+                    Withdraw
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         <h2 className="sr-only">Staff</h2>
         {staff === null && !loadError ? (
           <div className="mt-16 flex justify-center text-ink-muted" aria-busy="true">
@@ -305,18 +356,24 @@ export function AdminView() {
         open={adding}
         roles={roles}
         onClose={() => setAdding(false)}
-        onCreated={(member, link) => {
-          upsert(member);
-          void loadRoles();
+        onCreated={(invite, link) => {
+          void loadInvites();
           setAdding(false);
-          setLinkFor({ member, link });
-          toast.success(`${member.name} added`);
+          setLinkFor({ member: null, invite, link });
+          toast.success('Invitation link created');
         }}
       />
       <StaffSheet
         member={open}
         roles={roles}
         isSelf={!!open && open.id === selfId}
+        canDelete={canManageRoles && !!open && (open.role !== 'pi' || isPi)}
+        onDeleted={(m) => {
+          setStaff((prev) => prev?.filter((s) => s.id !== m.id) ?? prev);
+          setOpenId(null);
+          void loadRoles();
+          toast.success(`${m.name}’s account was deleted`);
+        }}
         onClose={() => setOpenId(null)}
         onUpdated={(m) => {
           upsert(m);
@@ -325,7 +382,7 @@ export function AdminView() {
         }}
         onLink={(member, link) => {
           setOpenId(null);
-          setLinkFor({ member, link });
+          setLinkFor({ member, invite: null, link });
         }}
       />
       <AccessRequestSheet
@@ -340,7 +397,7 @@ export function AdminView() {
           void loadRoles();
         }}
       />
-      <SetupLinkSheet member={linkFor?.member ?? null} link={linkFor?.link ?? null} onClose={() => setLinkFor(null)} />
+      <SetupLinkSheet member={linkFor?.member ?? null} invite={linkFor?.invite ?? null} link={linkFor?.link ?? null} onClose={() => setLinkFor(null)} />
     </div>
   );
 }

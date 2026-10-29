@@ -3,6 +3,7 @@ import { apiHandler, readJson } from '../../../../../server/http';
 import { ApiError } from '../../../../../server/participants';
 import {
   assertAdmin,
+  deleteStaff,
   requireReason,
   resendInvite,
   resetStaffPassword,
@@ -23,6 +24,21 @@ export async function PATCH(req: Request, { params }: Ctx) {
       const body = await readJson(req);
       const reason = requireReason(body.reason);
       return { member: await withTransaction({ userId: user.id, reason }, (c) => updateStaff(c, user, id, body)) };
+    },
+    { mutating: true },
+  );
+}
+
+/** Delete an account nothing refers to (PI or data manager): `{ reason }` */
+export async function DELETE(req: Request, { params }: Ctx) {
+  const { id } = await params;
+  return apiHandler(
+    async (user) => {
+      assertAdmin(user);
+      const body = await readJson(req);
+      const reason = requireReason(body.reason);
+      await withTransaction({ userId: user.id, reason }, (c) => deleteStaff(c, user, id));
+      return { ok: true };
     },
     { mutating: true },
   );

@@ -19,6 +19,7 @@ const nextConfig: NextConfig = {
       { source: '/:path*', headers: SECURITY_HEADERS },
       // Setup links carry a one-time token in the URL; never pass it on in a Referer header.
       { source: '/setup', headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }] },
+      { source: '/join', headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }] },
     ];
   },
 };

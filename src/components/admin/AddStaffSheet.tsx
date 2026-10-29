@@ -1,16 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { UserPlusIcon } from 'lucide-react';
+import { LinkIcon } from 'lucide-react';
 import { Sheet } from '../ui/Sheet';
 import { Button } from '../ui/Button';
-import { InputField } from '../ui/InputField';
 import { ChoiceField } from '../ui/ChoiceField';
 import { CheckToggle } from '../ui/CheckToggle';
 import { Alert } from '../ui/Alert';
 import type { RoleKey } from '../../data/roles';
 import type { RoleInfo } from '../../types/roles';
+import type { StaffInvite } from '../../types/invites';
 import { api } from '../../utils/api';
-import { EMAIL_RE } from '../../utils/accountRules';
-import type { SetupLink, StaffMember } from '../../types/staff';
+import type { SetupLink } from '../../types/staff';
 
 const roleOptions = (roles: RoleInfo[]) => roles.map((r) => ({ value: r.key, label: r.label, description: r.description }));
 
@@ -18,12 +17,11 @@ interface AddStaffSheetProps {
   open: boolean;
   roles: RoleInfo[];
   onClose: () => void;
-  onCreated: (member: StaffMember, link: SetupLink) => void;
+  onCreated: (invite: StaffInvite, link: SetupLink) => void;
 }
 
+/** Only the role is chosen here. The new person types their own name, email and password from the link. */
 export function AddStaffSheet({ open, roles, onClose, onCreated }: AddStaffSheetProps) {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
   const [role, setRole] = useState<RoleKey | ''>('');
   const [isAdmin, setIsAdmin] = useState(false);
   const [touched, setTouched] = useState(false);
@@ -32,8 +30,6 @@ export function AddStaffSheet({ open, roles, onClose, onCreated }: AddStaffSheet
 
   useEffect(() => {
     if (open) {
-      setName('');
-      setEmail('');
       setRole('');
       setIsAdmin(false);
       setTouched(false);
@@ -41,26 +37,18 @@ export function AddStaffSheet({ open, roles, onClose, onCreated }: AddStaffSheet
     }
   }, [open]);
 
-  const errors = {
-    name: name.trim().length < 2 ? 'Enter the full name' : undefined,
-    email: !EMAIL_RE.test(email.trim()) ? 'Enter a valid email address' : undefined,
-    role: !role ? 'Choose a role' : undefined,
-  };
-  const valid = !errors.name && !errors.email && !errors.role;
+  const roleProblem = !role ? 'Choose a role' : undefined;
 
   const submit = async () => {
     setTouched(true);
-    if (!valid || busy) return;
+    if (roleProblem || busy) return;
     setBusy(true);
     setError(null);
     try {
-      const res = await api<{ member: StaffMember; link: SetupLink }>('/api/admin/staff', {
-        method: 'POST',
-        body: { name: name.trim(), email: email.trim(), role, isAdmin },
-      });
-      onCreated(res.member, res.link);
+      const res = await api<{ invite: StaffInvite; link: SetupLink }>('/api/admin/invites', { method: 'POST', body: { role, isAdmin } });
+      onCreated(res.invite, res.link);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not add staff');
+      setError(err instanceof Error ? err.message : 'Could not create the link');
     } finally {
       setBusy(false);
     }
@@ -71,39 +59,30 @@ export function AddStaffSheet({ open, roles, onClose, onCreated }: AddStaffSheet
       open={open}
       onClose={onClose}
       title="Add staff"
-      description="They receive a one-time link to set their own password. You never see or choose it."
+      description="Choose the role, then send the link. They type their own name, email and password. You never see or choose the password."
       footer={
         <>
           <Button variant="secondary" className="flex-1" onClick={onClose}>
             Cancel
           </Button>
-          <Button className="flex-[1.6]" icon={<UserPlusIcon className="h-4 w-4" aria-hidden="true" />} onClick={() => void submit()} disabled={busy}>
-            {busy ? 'Adding…' : 'Add and create link'}
+          <Button className="flex-[1.6]" icon={<LinkIcon className="h-4 w-4" aria-hidden="true" />} onClick={() => void submit()} disabled={busy}>
+            {busy ? 'Creating…' : 'Create link'}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
         {error && <Alert tone="danger" title={error} />}
-        <InputField id="staff-name" label="Full name" value={name} onChange={setName} required autoComplete="off" error={touched ? errors.name : undefined} />
-        <InputField
-          id="staff-email"
-          label="Email address"
-          value={email}
-          onChange={setEmail}
-          required
-          autoComplete="off"
-          inputMode="email"
-          hint="Their sign-in name. One person per account; accounts are never shared."
-          error={touched ? errors.email : undefined}
-        />
-        <ChoiceField id="staff-role" label="Role" options={roleOptions(roles)} value={role} onChange={setRole} layout="stack" required error={touched ? errors.role : undefined} />
+        <ChoiceField id="staff-role" label="Role" options={roleOptions(roles)} value={role} onChange={setRole} layout="stack" required error={touched ? roleProblem : undefined} />
         <CheckToggle
           label="Study administrator"
           description="Can manage staff accounts and see participant contact details. Keep to the PI and the data manager."
           checked={isAdmin}
           onChange={setIsAdmin}
         />
+        <Alert tone="warn" title="Whoever opens the link creates the account">
+          The link works once and ends after 72 hours. Send it only to the person it is for, through a private channel.
+        </Alert>
       </div>
     </Sheet>
   );

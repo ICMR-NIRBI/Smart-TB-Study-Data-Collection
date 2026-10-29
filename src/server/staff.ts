@@ -279,6 +279,36 @@ export async function setStaffActive(q: Queryable, admin: AdminActor, id: string
   return getStaff(q, id);
 }
 
+/**
+ * Erases an account that nothing refers to. Only the PI and the data manager may; nobody can erase their own
+ * account, and only the PI can erase the PI. If the account has entered data or made changes, the database refuses
+ * and the person is told to deactivate it instead, so the audit trail stays whole.
+ */
+export async function deleteStaff(q: Queryable, admin: AdminActor & { role: string }, id: string): Promise<void> {
+  assertAdmin(admin);
+  if (admin.role !== 'pi' && admin.role !== 'data_manager') throw new ApiError(403, 'Only the PI and the data manager can delete accounts');
+  if (id === admin.id) throw new ApiError(409, 'You cannot delete your own account');
+  await lockUser(q, id);
+  const current = await getStaff(q, id);
+  if (current.role === 'pi' && admin.role !== 'pi') throw new ApiError(403, 'Only the PI can delete the PI account');
+  if (current.isAdmin && current.status !== 'deactivated') await assertAnotherAdmin(q, id);
+
+  // An approved request keeps its record, just without the link to the account.
+  await q.query('update access_requests set user_id = null where user_id = $1', [id]);
+  try {
+    await q.query('delete from app_users where id = $1', [id]);
+  } catch (err) {
+    if ((err as { code?: string }).code === '23503') {
+      throw new ApiError(
+        409,
+        `${current.name} has entered data or made changes in the study, so the account cannot be erased. Deactivate it instead: they cannot sign in and their name stays on what they entered.`,
+      );
+    }
+    throw err;
+  }
+  await q.query('delete from login_attempts where email = $1', [current.email]);
+}
+
 /** Replaces a person's extra modules with the given set. */
 export async function setDelegations(q: Queryable, admin: AdminActor, id: string, raw: unknown, reason: string): Promise<StaffMember> {
   assertAdmin(admin);

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { HistoryIcon, KeyRoundIcon, Loader2Icon, SendIcon, ShuffleIcon, UserCheckIcon, UserXIcon } from 'lucide-react';
+import { HistoryIcon, KeyRoundIcon, Loader2Icon, SendIcon, ShuffleIcon, Trash2Icon, UserCheckIcon, UserXIcon } from 'lucide-react';
 import { Sheet } from '../ui/Sheet';
 import { Button } from '../ui/Button';
 import { InputField } from '../ui/InputField';
@@ -18,7 +18,7 @@ import type { SetupLink, StaffHistoryEntry, StaffMember } from '../../types/staf
 
 const roleOptions = (roles: RoleInfo[]) => roles.map((r) => ({ value: r.key, label: r.label, description: r.description }));
 
-type PendingKind = 'details' | 'delegations' | 'deactivate' | 'reactivate' | 'reset' | 'temporary';
+type PendingKind = 'details' | 'delegations' | 'deactivate' | 'reactivate' | 'reset' | 'temporary' | 'delete';
 
 const PENDING: Record<PendingKind, { title: string; confirm: string; danger?: boolean; note: string }> = {
   details: { title: 'Save account changes', confirm: 'Save changes', note: 'The change and your reason are kept in the audit trail.' },
@@ -28,6 +28,12 @@ const PENDING: Record<PendingKind, { title: string; confirm: string; danger?: bo
     confirm: 'Deactivate',
     danger: true,
     note: 'They are signed out immediately and cannot sign in. Their name stays on everything they entered.',
+  },
+  delete: {
+    title: 'Delete account',
+    confirm: 'Delete account',
+    danger: true,
+    note: 'The account is erased and cannot be brought back. This only works for an account that has not entered data or made changes; otherwise deactivate it. The deletion and your reason stay in the audit trail.',
   },
   reactivate: { title: 'Reactivate account', confirm: 'Reactivate', note: 'They can sign in again with their existing password.' },
   temporary: {
@@ -48,8 +54,11 @@ interface StaffSheetProps {
   member: StaffMember | null;
   roles: RoleInfo[];
   isSelf: boolean;
+  /** The PI and the data manager may delete accounts (not their own; only the PI may delete the PI). */
+  canDelete: boolean;
   onClose: () => void;
   onUpdated: (member: StaffMember) => void;
+  onDeleted: (member: StaffMember) => void;
   onLink: (member: StaffMember, link: SetupLink) => void;
 }
 
@@ -62,7 +71,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-export function StaffSheet({ member, roles, isSelf, onClose, onUpdated, onLink }: StaffSheetProps) {
+export function StaffSheet({ member, roles, isSelf, canDelete, onClose, onUpdated, onDeleted, onLink }: StaffSheetProps) {
   const [name, setName] = useState('');
   const [role, setRole] = useState<RoleKey>('research_officer');
   const [isAdmin, setIsAdmin] = useState(false);
@@ -126,7 +135,12 @@ export function StaffSheet({ member, roles, isSelf, onClose, onUpdated, onLink }
     setError(null);
     const base = `/api/admin/staff/${member.id}`;
     try {
-      if (pending === 'details') {
+      if (pending === 'delete') {
+        await api(base, { method: 'DELETE', body: { reason } });
+        setPending(null);
+        onDeleted(member);
+        return;
+      } else if (pending === 'details') {
         const res = await api<{ member: StaffMember }>(base, { method: 'PATCH', body: { name: name.trim(), role, isAdmin, reason } });
         onUpdated(res.member);
       } else if (pending === 'temporary') {
@@ -356,6 +370,17 @@ export function StaffSheet({ member, roles, isSelf, onClose, onUpdated, onLink }
                 </Button>
               )}
             </div>
+          </Section>
+        )}
+
+        {canDelete && !isSelf && (
+          <Section title="Delete account">
+            <p className="text-sm text-ink-muted">
+              Erases this account for good. Only possible if they have not entered data or made changes in the study; otherwise deactivate them.
+            </p>
+            <Button variant="danger-outline" className="w-full" icon={<Trash2Icon className="h-4 w-4" aria-hidden="true" />} onClick={() => ask('delete')}>
+              Delete account
+            </Button>
           </Section>
         )}
 
