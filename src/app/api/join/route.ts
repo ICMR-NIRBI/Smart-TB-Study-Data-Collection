@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { isSameOrigin } from '../../../server/auth';
-import { getPool, withTransaction } from '../../../server/db';
+import { reader, withTransaction } from '../../../server/mongo/tx';
 import { errorResponse, readJson } from '../../../server/http';
 import { acceptInvite, describeInvite } from '../../../server/invites';
-import { ApiError } from '../../../server/participants';
+import { ApiError } from '../../../server/errors';
 import { allow } from '../../../server/rateLimit';
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
@@ -20,7 +20,7 @@ export async function GET(req: Request) {
   try {
     if (!allow(`join-view:${ipOf(req)}`, 60, HOUR)) throw new ApiError(429, 'Too many requests. Please try again later.');
     const token = new URL(req.url).searchParams.get('token') ?? '';
-    const invite = token ? await describeInvite(getPool(), token) : null;
+    const invite = token ? await describeInvite(reader, token) : null;
     if (!invite) throw new ApiError(410, GONE);
     return NextResponse.json({ invite }, { headers: NO_STORE });
   } catch (err) {

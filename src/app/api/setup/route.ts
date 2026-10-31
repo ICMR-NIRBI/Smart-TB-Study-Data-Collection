@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { isSameOrigin } from '../../../server/auth';
-import { getPool, withTransaction } from '../../../server/db';
+import { reader, withTransaction } from '../../../server/mongo/tx';
 import { errorResponse, readJson } from '../../../server/http';
-import { ApiError } from '../../../server/participants';
+import { ApiError } from '../../../server/errors';
 import { completeSetup, describeSetupToken } from '../../../server/staff';
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
@@ -11,7 +11,7 @@ const NO_STORE = { 'Cache-Control': 'no-store' };
 export async function GET(req: Request) {
   try {
     const token = new URL(req.url).searchParams.get('token') ?? '';
-    const account = token ? await describeSetupToken(getPool(), token) : null;
+    const account = token ? await describeSetupToken(reader, token) : null;
     if (!account) throw new ApiError(410, 'This setup link has expired or was already used. Ask the study administrator for a new one.');
     return NextResponse.json({ account }, { headers: NO_STORE });
   } catch (err) {

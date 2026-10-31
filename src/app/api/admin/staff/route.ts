@@ -1,11 +1,11 @@
-import { getPool, withTransaction } from '../../../../server/db';
+import { reader, withTransaction } from '../../../../server/mongo/tx';
 import { apiHandler, readJson } from '../../../../server/http';
 import { assertAdmin, createStaff, listStaff } from '../../../../server/staff';
 
 export async function GET() {
   return apiHandler(async (user) => {
     assertAdmin(user);
-    return { staff: await listStaff(getPool()) };
+    return { staff: await listStaff(reader) };
   });
 }
 

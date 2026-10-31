@@ -1,4 +1,4 @@
-import { withTransaction, getPool } from '../../../../server/db';
+import { reader, withTransaction } from '../../../../server/mongo/tx';
 import { apiHandler, readJson } from '../../../../server/http';
 import { assertAdmin } from '../../../../server/staff';
 import { createInvite, listInvites } from '../../../../server/invites';
@@ -7,7 +7,7 @@ import { createInvite, listInvites } from '../../../../server/invites';
 export async function GET() {
   return apiHandler(async (user) => {
     assertAdmin(user);
-    return { invites: await listInvites(getPool()) };
+    return { invites: await listInvites(reader) };
   });
 }
 

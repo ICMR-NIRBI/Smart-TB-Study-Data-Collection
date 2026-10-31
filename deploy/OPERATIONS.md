@@ -1,7 +1,7 @@
 # SMART-TB server: operations guide
 
 Everything here works from this file alone. No internet search is needed. Print it or keep a copy on the desktop.
-Every command was tried on this server. Lines starting with `#` inside a code block are comments, not commands.
+Every command was tried on this server, except two that would change real accounts or data: the full restore (section 6, tried on a test computer) and creating a new administrator (section 4). Lines starting with `#` inside a code block are comments, not commands.
 
 ## 1. Where things are
 
@@ -10,10 +10,10 @@ Every command was tried on this server. Lines starting with `#` inside a code bl
 - Key file: acip-vm-acaiproject_key.pem (laptop: D:\ServerKey\, desktop: C:\SMART-TB\). Never email it.
 - SSH is allowed only from the two whitelisted public IPs (laptop and desktop). The website is open to everyone on ports 80 and 443.
 - App code: /opt/smarttb/app (owned by user smarttb)
-- Settings and secrets: /opt/smarttb/.env (readable by root and smarttb only)
+- Settings and secrets: /opt/smarttb/.env (readable by root and smarttb only), and the database passwords in /opt/smarttb/.env.mongo (readable by smarttb only)
 - Backups: /opt/smarttb/backups (hourly, encrypted, newest 72 kept)
-- Database: PostgreSQL 16 on the same server, listening on 127.0.0.1 only, database name smarttb
-- Services: smarttb (the app, port 3000), caddy (web front door, ports 80/443), postgresql, fail2ban
+- Database: MongoDB 8.0 on the same server, listening on 127.0.0.1 only, database name smarttb. It runs as a single-node replica set with login switched on.
+- Services: smarttb (the app, port 3000), caddy (web front door, ports 80/443), mongod (the database), fail2ban
 - Backup copy on the desktop: C:\SMART-TB-Backups (downloaded every hour by Task Scheduler)
 
 Fill in before going live:
@@ -42,7 +42,7 @@ If it says "UNPROTECTED PRIVATE KEY FILE": run
 
 After connecting, run:
 
-    systemctl is-active smarttb caddy postgresql fail2ban
+    systemctl is-active smarttb caddy mongod fail2ban
     curl -s http://127.0.0.1:3000/api/health
     df -h / | tail -1
     systemctl list-timers smarttb-backup.timer --no-pager | head -3
@@ -75,27 +75,27 @@ Read the last lines of the log. Common causes: the database is down (see below),
 
 ### The login page loads but nobody can sign in
 1. `curl -s http://127.0.0.1:3000/api/health`. If it does not say ok, the database is probably down.
-2. `systemctl is-active postgresql`. If not active: `sudo systemctl restart postgresql`, then restart the app (`sudo systemctl restart smarttb`).
+2. `systemctl is-active mongod`. If not active: `sudo systemctl restart mongod`, then restart the app (`sudo systemctl restart smarttb`).
 3. One person only: after 5 wrong passwords an account is locked for about 5 minutes. Wait, then try again.
 4. Everyone is signed out suddenly: sessions end after 15 minutes of inactivity or after 12 hours. This is normal.
 5. Forgotten password: an administrator uses Staff accounts, then the person, then Reset password. It gives a one-time link.
 6. No administrator can sign in at all: create a new one (the email must not already exist):
 
         cd /opt/smarttb/app
-        sudo -u smarttb -H bash -c 'set -a; source /opt/smarttb/.env; set +a; npm run db:create-admin -- --email NEW@ADDRESS --name "Full Name" --role pi'
+        sudo -u smarttb -H bash -c 'export SMARTTB_ENV_FILES=/opt/smarttb/.env,/opt/smarttb/.env.mongo; npm run db:create-admin -- --email NEW@ADDRESS --name "Full Name" --role pi'
 
    It prints a one-time setup link. Send it privately.
 
 ### The database will not start
-    sudo systemctl status postgresql --no-pager
-    sudo journalctl -u postgresql -n 50 --no-pager
+    sudo systemctl status mongod --no-pager
+    sudo journalctl -u mongod -n 50 --no-pager
     df -h /
 
-A full disk is the most common cause (section 4, "Disk is nearly full"). If the data itself is damaged, restore from a backup (section 6).
+A full disk is the most common cause (section 4, "Disk is nearly full"). If the log says "Linux kernel versions 6.19 and newer has a known incompatibility", a server update changed the setting that works around that problem: check that the file /etc/systemd/system/mongod.service.d/rseq.conf still exists, then `sudo systemctl daemon-reload && sudo systemctl restart mongod`. If the data itself is damaged, restore from a backup (section 6).
 
 ### Disk is nearly full
     df -h /
-    sudo du -sh /opt/smarttb/backups /var/log /var/lib/postgresql
+    sudo du -sh /opt/smarttb/backups /var/log /var/lib/mongodb
     sudo journalctl --vacuum-size=200M
 
 Backups delete themselves after 72 copies. Logs are the usual cause. If the database itself is large, ask IT for a bigger disk.
@@ -157,18 +157,20 @@ The desktop downloads new files every hour (Task Scheduler job "SMART-TB backup 
 - Delete the job: `schtasks /Delete /TN "SMART-TB backup pull" /F`
 
 ### Test a backup (do this every month)
-This loads the newest backup into a temporary database and throws it away. It does not touch live data.
+This loads the newest backup into a temporary database, shows what it holds, and throws it away. It does not touch live data.
 
-    sudo bash -c '
+    sudo -u smarttb -H bash -c '
+    cd /opt/smarttb/app
     set -a; source /opt/smarttb/.env; set +a
+    export SMARTTB_ENV_FILES=/opt/smarttb/.env,/opt/smarttb/.env.mongo
     F=$(ls -1t /opt/smarttb/backups/smarttb-*.dump.enc | head -1)
-    sudo -u postgres psql -qc "CREATE DATABASE restore_test"
-    openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:BACKUP_PASSPHRASE -in "$F" | sudo -u postgres pg_restore --no-owner --dbname=restore_test
-    sudo -u postgres psql -d restore_test -Atc "select count(*) from participants"
-    sudo -u postgres psql -qc "DROP DATABASE restore_test"
+    openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:BACKUP_PASSPHRASE -in "$F" | npm run --silent db:restore -- --admin --into restore_test
+    npm run --silent db:counts -- --admin --db restore_test
+    npm run --silent db:counts
+    npm run --silent db:drop-scratch -- restore_test
     '
 
-It should print the number of participants with no errors.
+It should print "Restored ... documents", then two lists of counts that are close to each other (the first is the backup, the second is live data; live data may have a few more records entered since). There must be no error messages. Every hourly backup is also checked by the server itself when it is written (it decrypts the file and tests it), and a failed check shows in `journalctl -u smarttb-backup`.
 
 ### Full restore after a disaster (database lost or damaged)
 This replaces the live database with a backup. Anything entered after that backup is lost and must be re-entered from the paper forms. Write down the time of the backup you use.
@@ -180,16 +182,19 @@ This replaces the live database with a backup. Anything entered after that backu
 
         sudo systemctl stop smarttb smarttb-backup.timer
 
-3. Keep the damaged database aside, create an empty one and restore:
+3. If the damaged database still opens, keep a copy of what is left first (it becomes the newest backup file, so note its name), then restore over the database:
 
-        sudo bash -c '
+        sudo systemctl start mongod
+        sudo systemctl start smarttb-backup
+        sudo -u smarttb -H bash -c '
+        cd /opt/smarttb/app
         set -a; source /opt/smarttb/.env; set +a
+        export SMARTTB_ENV_FILES=/opt/smarttb/.env,/opt/smarttb/.env.mongo
         F=/opt/smarttb/backups/<file>
-        sudo -u postgres psql -c "ALTER DATABASE smarttb RENAME TO smarttb_damaged"
-        sudo -u postgres psql -c "CREATE DATABASE smarttb OWNER smarttb_owner"
-        sudo -u postgres psql -c "REVOKE ALL ON DATABASE smarttb FROM PUBLIC" -c "GRANT CONNECT ON DATABASE smarttb TO smarttb_app"
-        openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:BACKUP_PASSPHRASE -in "$F" | pg_restore --no-owner --dbname="$DATABASE_OWNER_URL"
+        openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:BACKUP_PASSPHRASE -in "$F" | npm run --silent db:restore -- --replace
         '
+
+   The last command prints "Restored ... documents" and the count for each collection. If the whole database folder was lost (a new disk), set MongoDB up again first (section 8, steps 3 to 7) and restore without `--replace`.
 
 4. Start again and check:
 
@@ -197,21 +202,23 @@ This replaces the live database with a backup. Anything entered after that backu
         sleep 5
         curl -s http://127.0.0.1:3000/api/health
 
-5. Sign in and check recent participants. When sure, remove the damaged copy: `sudo -u postgres psql -c "DROP DATABASE smarttb_damaged"`.
+5. Sign in and check recent participants. Keep the copy made in step 3 for a few weeks in case something was missed.
 
-This exact procedure was tried on this server: the restored data loaded, the app account could read it, and it was still refused when it tried to delete study data.
+The restore was tried on a test computer: a backup loaded into an empty database and into a second database, every collection had the same number of records, the unique rules (one account per email, one participant ID) came back, and a wrong passphrase wrote nothing. Do the monthly test above on this server once before relying on it.
 
 ### Open a backup by hand (any Linux machine)
     read -rs BACKUP_PASSPHRASE; export BACKUP_PASSPHRASE      # type the passphrase, nothing shows
-    openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:BACKUP_PASSPHRASE -in smarttb-XXXX.dump.enc -out smarttb.dump
-    pg_restore --list smarttb.dump | head        # shows the contents
+    openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:BACKUP_PASSPHRASE -in smarttb-XXXX.dump.enc -out smarttb.dump.gz
+    gunzip -c smarttb.dump.gz | head -c 2000        # shows the first lines; every line is one record as plain JSON text
+
+The file is a compressed list of records, one per line, in plain JSON text. Contact details inside it are still encrypted (they need CONTACT_ENC_KEY).
 
 ## 7. Secrets: what must never be lost
 
 In /opt/smarttb/.env:
 - CONTACT_ENC_KEY: encrypts participant phone numbers and addresses. If it is lost, those fields can never be read again. Never change it once real data exists.
 - BACKUP_PASSPHRASE: without it no backup can be opened.
-- DATABASE_OWNER_URL and DATABASE_URL: database passwords. They can be reset with `sudo -u postgres psql -c "ALTER ROLE smarttb_app PASSWORD 'new'"` followed by the same change in .env and `sudo systemctl restart smarttb`.
+- /opt/smarttb/.env.mongo: the database passwords (one for the app, one for backups and updates, one for setting up). They can be replaced with new random ones at any time: `sudo -u smarttb -H bash -c 'cd /opt/smarttb/app && npm run db:setup -- --env /opt/smarttb/.env.mongo --db smarttb --port 27017'` and then `sudo systemctl restart smarttb`. Never show this file on a shared screen.
 
 Keep an offline copy of the first two in a sealed place (for example with the PI). To read them on the server:
 
@@ -225,12 +232,12 @@ Use this if the server is lost. About 1 to 2 hours.
 
 1. Ask IT for a new Ubuntu 24.04 server with ports 22 (from the two IPs), 80 and 443, and a key file.
 2. Copy the deploy folder: `scp -i "<key>" -r "<project>\deploy" azureuser@<new IP>:~/`
-3. On the server: `sudo bash ~/deploy/server-setup.sh --with-local-db`
+3. On the server: `sudo bash ~/deploy/server-setup.sh`, then install the database: `sudo bash ~/deploy/mongo-setup.sh`
 4. Put the code on it (section 5), cloning once: `sudo -u smarttb -H git clone -b main /opt/smarttb/code.bundle /opt/smarttb/app`
-5. Create /opt/smarttb/.env. Use the SAME CONTACT_ENC_KEY and BACKUP_PASSPHRASE as before (from the offline copy). Create new database passwords. Use the layout in deploy/env.production.example, with local 127.0.0.1 database addresses and no DATABASE_SSL_CA. Add a temporary PG_ADMIN_URL line for the next step.
-6. Create the database: `cd /opt/smarttb/app` and `sudo -u smarttb -H bash -c 'set -a; source /opt/smarttb/.env; set +a; npm ci && npm run db:setup && npm run db:preflight'` (all checks must pass)
-7. Restore the newest backup (section 6, full restore, from step 3 with a database created by db:setup).
-8. `sudo bash /opt/smarttb/app/deploy/deploy.sh`, then remove PG_ADMIN_URL from .env.
+5. Create /opt/smarttb/.env. Use the SAME CONTACT_ENC_KEY and BACKUP_PASSPHRASE as before (from the offline copy). Use the layout in deploy/env.production.example. The database passwords are made for you in the next steps; do not reuse old ones.
+6. `sudo bash /opt/smarttb/app/deploy/deploy.sh` (first run: it builds the app and says the database logins are not set up yet, which is expected), then `sudo bash /opt/smarttb/app/deploy/mongo-init.sh` (creates the database logins and switches login on), then `sudo bash /opt/smarttb/app/deploy/deploy.sh` again.
+7. Check the new database: `sudo -u smarttb -H bash -c 'cd /opt/smarttb/app && SMARTTB_ENV_FILES=/opt/smarttb/.env,/opt/smarttb/.env.mongo npm run db:preflight'` (all checks must pass)
+8. Restore the newest backup into it (section 6, full restore, step 3, without `--replace` because the database is new), then restart the app: `sudo systemctl restart smarttb`.
 9. Point the domain to the new IP. Ask IT to allow SSH from the two IPs and enable the backup timer: `sudo systemctl enable --now smarttb-backup.timer`.
 
 ## 9. Not done yet (do before the first real participant)
@@ -246,7 +253,7 @@ Use this if the server is lost. About 1 to 2 hours.
     sudo systemctl restart caddy                # restart the web front door
     journalctl -u smarttb -f                    # watch the app log live (Ctrl+C to stop)
     sudo ufw status                             # firewall rules
-    sudo -u postgres psql -d smarttb -c "select count(*) from participants"
+    sudo -u smarttb -H bash -c 'cd /opt/smarttb/app && SMARTTB_ENV_FILES=/opt/smarttb/.env,/opt/smarttb/.env.mongo npm run --silent db:counts'   # how many records of each kind
     free -h                                     # memory
     uptime                                      # load and time since restart
     sudo reboot                                 # restart the whole server (last resort)

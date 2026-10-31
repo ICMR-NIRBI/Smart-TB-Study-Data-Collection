@@ -1,17 +1,17 @@
-import type { PoolClient } from 'pg';
+import { randomUUID } from 'node:crypto';
 import { hashPassword } from './passwords';
-import { ApiError } from './participants';
-import { cleanName, requireReason } from './staff';
+import { ApiError } from './errors';
+import { isDuplicateKey } from './mongo/client';
+import type { Tx } from './mongo/tx';
+import { cleanName, newUserDoc, requireReason } from './staff';
 import { cleanRole } from './roles';
 import { isRoleKey, type RoleKey } from '../data/roles';
 import { EMAIL_RE, passwordProblem } from '../utils/accountRules';
 import type { AccessRequest, AccessRequestStatus } from '../types/accessRequests';
 
-type Queryable = Pick<PoolClient, 'query'>;
-
 /** Open requests stop being valid after this many days. */
 export const REQUEST_VALID_DAYS = 14;
-/** Safety cap on open requests, so a flood cannot fill the table. */
+/** Safety cap on open requests, so a flood cannot fill the collection. */
 const MAX_PENDING = 100;
 const MAX_NOTE_LENGTH = 300;
 const MIN_NOTE_LENGTH = 5;
@@ -26,16 +26,34 @@ export function assertPi(actor: PiActor) {
   if (actor.role !== 'pi') throw new ApiError(403, 'Only the PI can review access requests');
 }
 
+interface RequestDoc {
+  _id: string;
+  email: string;
+  display_name: string;
+  requested_role: string;
+  note: string;
+  password_hash: string | null;
+  status: AccessRequestStatus;
+  created_at: Date;
+  expires_at: Date;
+  decided_by: string | null;
+  decided_at: Date | null;
+  decision_role: string | null;
+  decision_reason: string | null;
+  user_id: string | null;
+}
+
 /** Marks overdue requests expired and discards their stored passwords. Run in its own transaction before a decision. */
-export async function expireStale(q: Queryable) {
-  await q.query("update access_requests set status = 'expired', password_hash = null where status = 'pending' and expires_at < now()");
+export async function expireStale(tx: Tx) {
+  await tx.updateMany('access_requests', { status: 'pending', expires_at: { $lt: new Date() } }, { $set: { status: 'expired', password_hash: null } });
 }
 
 /**
  * Records a request. The answer is always the same whether or not it was stored (existing account, open request,
- * full queue), so the form cannot be used to find out which emails have accounts.
+ * full queue), so the form cannot be used to find out which emails have accounts. Two identical requests arriving at
+ * the same instant make the second one fail on the unique rule; the route treats that as "already recorded".
  */
-export async function submitAccessRequest(q: Queryable, body: Record<string, unknown>): Promise<void> {
+export async function submitAccessRequest(tx: Tx, body: Record<string, unknown>): Promise<void> {
   const name = cleanName(body.name);
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
   if (!EMAIL_RE.test(email) || email.length > 120) throw new ApiError(400, 'Enter a valid email address');
@@ -52,50 +70,52 @@ export async function submitAccessRequest(q: Queryable, body: Record<string, unk
   // Hash first in every case, so the response time does not depend on what happens next.
   const hash = await hashPassword(password);
 
-  await expireStale(q);
-  const existing = await q.query('select 1 from app_users where email = $1', [email]);
-  const pending = await q.query<{ n: number }>("select count(*)::int as n from access_requests where status = 'pending'");
-  if (existing.rowCount || pending.rows[0].n >= MAX_PENDING) return;
+  await expireStale(tx);
+  const existing = await tx.findOne('app_users', { email }, { projection: { _id: 1 } });
+  const waiting = await tx.findOne('access_requests', { email, status: 'pending' }, { projection: { _id: 1 } });
+  const pending = await tx.count('access_requests', { status: 'pending' });
+  if (existing || waiting || pending >= MAX_PENDING) return;
 
-  await q.query(
-    `insert into access_requests (email, display_name, requested_role, note, password_hash, expires_at)
-     values ($1, $2, $3, $4, $5, now() + make_interval(days => $6))
-     on conflict (lower(email)) where status = 'pending' do nothing`,
-    [email, name, requestedRole, note, hash, REQUEST_VALID_DAYS],
-  );
+  const now = new Date();
+  await tx.insertOne('access_requests', {
+    _id: randomUUID(),
+    email,
+    display_name: name,
+    requested_role: requestedRole,
+    note,
+    password_hash: hash,
+    status: 'pending',
+    created_at: now,
+    expires_at: new Date(now.getTime() + REQUEST_VALID_DAYS * 24 * 3600 * 1000),
+    decided_by: null,
+    decided_at: null,
+    decision_role: null,
+    decision_reason: null,
+    user_id: null,
+  });
 }
 
-interface RequestRow {
-  id: string;
-  email: string;
-  display_name: string;
-  requested_role: string;
-  note: string;
-  status: AccessRequestStatus;
-  created_at: Date;
-  expires_at: Date;
-  decided_by_name: string | null;
-  decided_at: Date | null;
-  decision_role: string | null;
-  decision_reason: string | null;
-}
+/** True when an error from submitAccessRequest only means an identical pending request already exists. */
+export const isAlreadyRecorded = isDuplicateKey;
 
 const asRole = (r: string | null): RoleKey | '' => r ?? '';
 
 /** Pending requests first, then decisions from the last 30 days. */
-export async function listAccessRequests(q: Queryable, actor: PiActor): Promise<AccessRequest[]> {
+export async function listAccessRequests(tx: Tx, actor: PiActor): Promise<AccessRequest[]> {
   assertPi(actor);
-  await expireStale(q);
-  const { rows } = await q.query<RequestRow>(
-    `select r.id, r.email, r.display_name, r.requested_role, r.note, r.status, r.created_at, r.expires_at,
-            d.display_name as decided_by_name, r.decided_at, r.decision_role, r.decision_reason
-       from access_requests r left join app_users d on d.id = r.decided_by
-      where r.status = 'pending' or coalesce(r.decided_at, r.expires_at) > now() - interval '30 days'
-      order by (r.status = 'pending') desc, r.created_at desc
-      limit 200`,
+  await expireStale(tx);
+  const cutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+  const rows = await tx.find<RequestDoc>(
+    'access_requests',
+    { $or: [{ status: 'pending' }, { decided_at: { $gt: cutoff } }, { decided_at: null, expires_at: { $gt: cutoff } }] },
   );
-  return rows.map((r) => ({
-    id: r.id,
+  rows.sort((a, b) => Number(b.status === 'pending') - Number(a.status === 'pending') || b.created_at.getTime() - a.created_at.getTime());
+  const top = rows.slice(0, 200);
+  const ids = [...new Set(top.map((r) => r.decided_by).filter((v): v is string => !!v))];
+  const people = ids.length ? await tx.find<{ _id: string; display_name: string }>('app_users', { _id: { $in: ids } as never }, { projection: { display_name: 1 } }) : [];
+  const nameOf = new Map(people.map((p) => [p._id, p.display_name]));
+  return top.map((r) => ({
+    id: r._id,
     name: r.display_name,
     email: r.email,
     requestedRole: asRole(r.requested_role) || 'research_officer',
@@ -103,19 +123,16 @@ export async function listAccessRequests(q: Queryable, actor: PiActor): Promise<
     status: r.status,
     createdAt: r.created_at.toISOString(),
     expiresAt: r.expires_at.toISOString(),
-    decidedBy: r.decided_by_name ?? '',
+    decidedBy: (r.decided_by && nameOf.get(r.decided_by)) || '',
     decidedAt: r.decided_at?.toISOString() ?? '',
     decisionRole: asRole(r.decision_role),
     decisionReason: r.decision_reason ?? '',
   }));
 }
 
-async function lockPending(q: Queryable, id: string) {
-  const { rows } = await q.query<{ id: string; email: string; display_name: string; requested_role: string; password_hash: string | null; status: string; expires_at: Date }>(
-    'select id, email, display_name, requested_role, password_hash, status, expires_at from access_requests where id = $1 for update',
-    [id],
-  );
-  const row = rows[0];
+/** The request, if it is still open for a decision. Two decisions at once conflict on it and the second starts over. */
+async function loadPending(tx: Tx, id: string): Promise<RequestDoc> {
+  const row = await tx.findOne<RequestDoc>('access_requests', { _id: id as never });
   if (!row) throw new ApiError(404, 'Request not found');
   if (row.status === 'expired' || (row.status === 'pending' && row.expires_at.getTime() < Date.now())) {
     throw new ApiError(410, `This request expired after ${REQUEST_VALID_DAYS} days. Ask the person to submit a new one.`);
@@ -125,36 +142,25 @@ async function lockPending(q: Queryable, id: string) {
 }
 
 /** Creates the account with the password the person chose, in the role the PI picks. */
-export async function approveAccessRequest(q: Queryable, actor: PiActor, id: string, body: Record<string, unknown>): Promise<void> {
+export async function approveAccessRequest(tx: Tx, actor: PiActor, id: string, body: Record<string, unknown>): Promise<void> {
   assertPi(actor);
-  const row = await lockPending(q, id);
-  const role = await cleanRole(q, body.role ?? row.requested_role);
+  const row = await loadPending(tx, id);
+  const role = await cleanRole(tx, body.role ?? row.requested_role);
   if (!row.password_hash) throw new ApiError(409, 'This request has no password stored. Reject it and ask the person to submit again.');
 
-  let userId: string;
+  const user = newUserDoc({ email: row.email, name: row.display_name, role, isAdmin: false, passwordHash: row.password_hash });
   try {
-    const { rows } = await q.query<{ id: string }>(
-      'insert into app_users (email, display_name, role, is_admin, password_hash) values ($1, $2, $3, false, $4) returning id',
-      [row.email, row.display_name, role, row.password_hash],
-    );
-    userId = rows[0].id;
+    await tx.insertOne('app_users', user);
   } catch (err) {
-    if ((err as { code?: string }).code === '23505') throw new ApiError(409, 'An account with this email already exists.');
+    if (isDuplicateKey(err)) throw new ApiError(409, 'An account with this email already exists.');
     throw err;
   }
-  await q.query(
-    `update access_requests set status = 'approved', password_hash = null, decided_by = $2, decided_at = now(), decision_role = $3, user_id = $4
-      where id = $1`,
-    [id, actor.id, role, userId],
-  );
+  await tx.updateOne('access_requests', { _id: id as never }, { $set: { status: 'approved', password_hash: null, decided_by: actor.id, decided_at: new Date(), decision_role: role, user_id: user._id } });
 }
 
-export async function rejectAccessRequest(q: Queryable, actor: PiActor, id: string, reasonRaw: unknown): Promise<void> {
+export async function rejectAccessRequest(tx: Tx, actor: PiActor, id: string, reasonRaw: unknown): Promise<void> {
   assertPi(actor);
   const reason = requireReason(reasonRaw);
-  await lockPending(q, id);
-  await q.query(
-    "update access_requests set status = 'rejected', password_hash = null, decided_by = $2, decided_at = now(), decision_reason = $3 where id = $1",
-    [id, actor.id, reason],
-  );
+  await loadPending(tx, id);
+  await tx.updateOne('access_requests', { _id: id as never }, { $set: { status: 'rejected', password_hash: null, decided_by: actor.id, decided_at: new Date(), decision_reason: reason } });
 }

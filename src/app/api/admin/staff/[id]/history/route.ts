@@ -1,4 +1,4 @@
-import { getPool } from '../../../../../../server/db';
+import { reader } from '../../../../../../server/mongo/tx';
 import { apiHandler } from '../../../../../../server/http';
 import { assertAdmin, staffHistory } from '../../../../../../server/staff';
 
@@ -8,6 +8,6 @@ export async function GET(_req: Request, { params }: Ctx) {
   const { id } = await params;
   return apiHandler(async (user) => {
     assertAdmin(user);
-    return { history: await staffHistory(getPool(), id) };
+    return { history: await staffHistory(reader, id) };
   });
 }

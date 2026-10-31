@@ -1,4 +1,4 @@
-import { setAuditContext, withTransaction } from '../../../../../../server/db';
+import { withTransaction } from '../../../../../../server/mongo/tx';
 import { apiHandler, parseModuleId, readJson } from '../../../../../../server/http';
 import {
   ApiError,
@@ -20,7 +20,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       const body = await readJson(req);
       await withTransaction({ userId: user.id }, async (c) => {
         const reason = await currentEditReason(c, uid, id);
-        if (reason) await setAuditContext(c, { userId: user.id, reason });
+        if (reason) c.setReason(reason);
         await patchModule(c, user, uid, id, body.patch);
       });
       return { ok: true };
@@ -43,7 +43,7 @@ export async function POST(req: Request, { params }: Ctx) {
         if (action === 'draft') return saveDraft(c, user, uid, id);
         if (action === 'complete') {
           const reason = await currentEditReason(c, uid, id);
-          if (reason) await setAuditContext(c, { userId: user.id, reason });
+          if (reason) c.setReason(reason);
           return completeModule(c, user, uid, id);
         }
         if (action === 'reopen') return reopenModule(c, user, uid, id, reasonText);

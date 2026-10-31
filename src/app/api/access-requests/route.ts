@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { isSameOrigin } from '../../../server/auth';
-import { withTransaction } from '../../../server/db';
+import { withTransaction } from '../../../server/mongo/tx';
 import { errorResponse, readJson } from '../../../server/http';
-import { ApiError } from '../../../server/participants';
+import { ApiError } from '../../../server/errors';
 import { allow } from '../../../server/rateLimit';
-import { submitAccessRequest } from '../../../server/accessRequests';
+import { isAlreadyRecorded, submitAccessRequest } from '../../../server/accessRequests';
 
 const HOUR = 60 * 60 * 1000;
 
@@ -22,7 +22,12 @@ export async function POST(req: Request) {
     }
     const body = await readJson(req);
     if (typeof body.website === 'string' && body.website) return NextResponse.json({ ok: true });
-    await withTransaction({}, (c) => submitAccessRequest(c, body));
+    try {
+      await withTransaction({}, (c) => submitAccessRequest(c, body));
+    } catch (err) {
+      // An identical request arriving at the same instant: the answer is the same either way.
+      if (!isAlreadyRecorded(err)) throw err;
+    }
     return NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (err) {
     return errorResponse(err);

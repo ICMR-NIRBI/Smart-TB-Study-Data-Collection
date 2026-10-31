@@ -1,65 +1,66 @@
-# Deploying SMART-TB on E2E
+# Deploying SMART-TB on a server
 
-Ubuntu 24.04 app server (E2E C3.8GB node, Delhi NCR) running the Next.js app behind Caddy, plus either a
-managed PostgreSQL (production) or PostgreSQL on the same server (team testing with dummy data).
+Ubuntu 24.04 server running the Next.js app behind Caddy, with MongoDB 8.0 on the same server (listening on
+`127.0.0.1` only, as a single-node replica set, with login switched on).
 
 All commands run as `root` on the server unless noted. Use only letters and digits in passwords and keys in
-`/opt/smarttb/.env` — the file is read by both systemd and bash.
+`/opt/smarttb/.env`: the file is read by both systemd and bash. The MongoDB addresses are kept in a second file,
+`/opt/smarttb/.env.mongo`, because they contain `&`: that file is read by systemd and by the scripts, and must never be
+loaded with `source`.
+
+The day-to-day guide for the people who run the server is `deploy/OPERATIONS.md`.
 
 ## 1. Prepare the server (once)
 
-From this PC, copy the deploy folder and run the setup script:
+From this PC, copy the deploy folder and run the setup scripts:
 
 ```bash
 scp -r deploy root@<server-ip>:/root/
 ssh root@<server-ip>
-bash /root/deploy/server-setup.sh --with-local-db   # team testing
-bash /root/deploy/server-setup.sh                   # production with managed DBaaS
+bash /root/deploy/server-setup.sh     # updates, Node.js, Caddy, firewall, fail2ban, services, backup timer
+bash /root/deploy/mongo-setup.sh      # MongoDB 8.0 (package source, held version, replica set, key file)
 ```
 
-It installs updates, Node.js 22, Caddy, the firewall (SSH/80/443 only), fail2ban, automatic security updates,
-the `smarttb` service and the backup timer, and prints a **deploy key**. Add that key to GitHub
-(repo → Settings → Deploy keys, read-only).
+`server-setup.sh` prints a **deploy key**. Add that key to GitHub (repo → Settings → Deploy keys, read-only), or
+use the git bundle method in `OPERATIONS.md` section 5.
+
+`mongo-setup.sh` installs MongoDB from MongoDB's own package source and holds the version, so a routine update
+never changes the database by itself. On servers running Linux 6.19 or newer it adds a small service override
+that MongoDB 8.0 needs there (see the comments in the script).
 
 ## 2. Fill in `/opt/smarttb/.env`
 
 Start from the copy the setup script placed there (`deploy/env.production.example`). Generate secrets with
 `openssl rand -base64 48 | tr -dc 'A-Za-z0-9'`. Store `CONTACT_ENC_KEY` and `BACKUP_PASSPHRASE` offline as well.
 
-| Phase | Database URLs | COOKIE_SECURE | ALLOW_TEST_LOGIN | NEXT_PUBLIC_CRF_PREVIEW | Caddyfile |
-|---|---|---|---|---|---|
-| Team testing (IP, dummy data) | `localhost` | `false` | `true` | `true` | `Caddyfile.ip` |
-| Production (domain, real data) | E2E DBaaS + `DATABASE_SSL_CA` | `true` | `false` | `false` | `Caddyfile` |
-
-Local test database only — give the `postgres` user the password used in `PG_ADMIN_URL`:
-
-```bash
-sudo -u postgres psql -c "alter user postgres password '<password>'"
-```
-
-Managed DBaaS only — enable SSL on the DBaaS page, download the CA certificate to `/opt/smarttb/dbaas-ca.pem`,
-and whitelist the app server's private IP.
+| Phase | COOKIE_SECURE | ALLOW_TEST_LOGIN | NEXT_PUBLIC_CRF_PREVIEW | Caddyfile |
+|---|---|---|---|---|
+| Team testing (IP, dummy data) | `false` | `true` | `true` | `Caddyfile.ip` |
+| Production (domain, real data) | `true` | `false` | `false` | `Caddyfile` |
 
 ## 3. First install
 
 ```bash
-bash /root/deploy/deploy.sh                       # clones, builds, migrates, starts (migrate may fail before step 4; that is fine)
-cd /opt/smarttb/app
-sudo -u smarttb bash -c 'set -a; source /opt/smarttb/.env; set +a; npm run db:setup && npm run db:preflight'
+bash /root/deploy/deploy.sh          # fetches, builds, starts. It says the database logins are not set up yet: expected.
+bash /opt/smarttb/app/deploy/mongo-init.sh   # replica set, logins (written to /opt/smarttb/.env.mongo), login switched on
+bash /opt/smarttb/app/deploy/deploy.sh       # applies the collections and indexes and starts the app for real
 ```
 
-Then, depending on the phase:
+Then check the database and create the first administrator (prints a one-time setup link):
 
 ```bash
-# Team testing: dummy accounts and participants
-sudo -u smarttb bash -c 'set -a; source /opt/smarttb/.env; set +a; npm run db:reset'
-
-# Production: schema only, then the first administrator (prints a one-time setup link)
-sudo -u smarttb bash -c 'set -a; source /opt/smarttb/.env; set +a; npm run db:migrate && npm run db:create-admin -- --email <email> --name "<full name>" --role pi'
+cd /opt/smarttb/app
+sudo -u smarttb bash -c 'export SMARTTB_ENV_FILES=/opt/smarttb/.env,/opt/smarttb/.env.mongo; npm run db:preflight'
+sudo -u smarttb bash -c 'export SMARTTB_ENV_FILES=/opt/smarttb/.env,/opt/smarttb/.env.mongo; npm run db:create-admin -- --email <email> --name "<full name>" --role pi'
 ```
 
-`db:preflight` must show **All checks passed** before real data goes on a database (pgcrypto, SSL, triggers,
-restricted role).
+For team testing with dummy data instead of an administrator, run `npm run db:reset` the same way (it refuses to run
+unless the database is on the same computer, and it empties the database first).
+
+`db:preflight` must show **All checks passed** before real data goes on a database. It checks that MongoDB is a
+replica set with a primary, that login is required, that all collections and indexes exist, that the app's login can
+only add to the audit trail and cannot delete participants or create collections, that transactions roll back, and
+that contact details encrypt and decrypt.
 
 ## 4. Updates
 
@@ -67,6 +68,8 @@ restricted role).
 bash /opt/smarttb/app/deploy/deploy.sh            # latest main
 bash /opt/smarttb/app/deploy/deploy.sh <commit>   # a specific version (also how to roll back)
 ```
+
+A deploy applies the collections and indexes (`npm run db:migrate`, safe to repeat) and restarts the app.
 
 ## 5. Domain and HTTPS
 
@@ -82,20 +85,24 @@ systemctl start smarttb-backup                # run one now
 journalctl -u smarttb-backup -n 20            # check
 ```
 
-Restore a copy (into an empty database):
+Each backup is one encrypted file holding every collection from the same moment. The script decrypts and tests the file
+before it keeps it, so a damaged backup is reported when it is made. Restore a copy (into the live database, replacing
+what is there):
 
 ```bash
+cd /opt/smarttb/app
+export SMARTTB_ENV_FILES=/opt/smarttb/.env,/opt/smarttb/.env.mongo
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:BACKUP_PASSPHRASE -in <file>.dump.enc \
-  | pg_restore --no-owner --dbname="$DATABASE_OWNER_URL"
+  | npm run --silent db:restore -- --replace
 ```
 
-Test a restore once a month into a scratch database.
+Test a restore once a month into a scratch database (`OPERATIONS.md` section 6).
 
 ## Before the first real participant
 
 - [ ] `ALLOW_TEST_LOGIN=false`, `NEXT_PUBLIC_CRF_PREVIEW=false`, redeployed
 - [ ] Domain + HTTPS working, `COOKIE_SECURE=true`
-- [ ] Managed DBaaS, `db:preflight` all passed, demo accounts absent
+- [ ] `db:preflight` all passed, demo accounts absent
 - [ ] Backup timer enabled, one restore tested
 - [ ] `CONTACT_ENC_KEY` and `BACKUP_PASSPHRASE` stored offline
 - [ ] Two-step sign-in for staff (to be added in the app)

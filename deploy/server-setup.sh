@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# One-time preparation of a fresh Ubuntu 24.04 server (E2E C3.8GB node) for SMART-TB. Run as root:
-#   bash server-setup.sh                  # production: database is the managed E2E DBaaS
-#   bash server-setup.sh --with-local-db  # team testing: PostgreSQL on this server, dummy data only
+# One-time preparation of a fresh Ubuntu 24.04 server for SMART-TB. Run as root:
+#   bash server-setup.sh
+# MongoDB is installed in the next step (mongo-setup.sh, then mongo-init.sh after the first deploy).
 set -euo pipefail
 
-WITH_LOCAL_DB=false
-[[ "${1:-}" == "--with-local-db" ]] && WITH_LOCAL_DB=true
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 [[ $EUID -eq 0 ]] || { echo "Run as root"; exit 1; }
@@ -14,7 +12,7 @@ echo "==> System updates and base packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get upgrade -y
-apt-get install -y curl git ufw fail2ban unattended-upgrades rclone openssl ca-certificates gnupg debian-keyring debian-archive-keyring apt-transport-https postgresql-client
+apt-get install -y curl git ufw fail2ban unattended-upgrades rclone openssl ca-certificates gnupg debian-keyring debian-archive-keyring apt-transport-https
 dpkg-reconfigure -f noninteractive unattended-upgrades
 
 echo "==> Node.js 22 LTS"
@@ -29,11 +27,6 @@ if ! command -v caddy >/dev/null; then
   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' > /etc/apt/sources.list.d/caddy-stable.list
   apt-get update -y
   apt-get install -y caddy
-fi
-
-if $WITH_LOCAL_DB; then
-  echo "==> PostgreSQL on this server (testing only; listens on localhost)"
-  apt-get install -y postgresql postgresql-contrib
 fi
 
 echo "==> App user and folders"
@@ -73,5 +66,7 @@ Server prepared.
 1. Add this read-only deploy key to GitHub (repo > Settings > Deploy keys):
 $(cat /home/smarttb/.ssh/id_ed25519.pub)
 2. Fill in /opt/smarttb/.env  (see deploy/README.md)
-3. Run: bash $HERE/deploy.sh
+3. Run: bash $HERE/mongo-setup.sh   (installs MongoDB)
+4. Run: bash $HERE/deploy.sh         (first run; it will say the database logins are not set up yet)
+5. Run: bash $HERE/mongo-init.sh     (creates the database logins), then deploy.sh again
 EOF

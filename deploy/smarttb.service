@@ -1,7 +1,7 @@
 [Unit]
 Description=SMART-TB CRF web application
-After=network-online.target
-Wants=network-online.target
+After=network-online.target mongod.service
+Wants=network-online.target mongod.service
 
 [Service]
 Type=simple
@@ -9,6 +9,8 @@ User=smarttb
 Group=smarttb
 WorkingDirectory=/opt/smarttb/app
 EnvironmentFile=/opt/smarttb/.env
+# The MongoDB addresses. Read by systemd directly (they contain "&", so never source this file in a shell).
+EnvironmentFile=/opt/smarttb/.env.mongo
 Environment=NODE_ENV=production
 # Listens on localhost only; Caddy is the only thing exposed to the internet.
 ExecStart=/usr/bin/node node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000

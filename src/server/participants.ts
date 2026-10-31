@@ -1,20 +1,16 @@
-import type { PoolClient } from 'pg';
+import type { Binary } from 'mongodb';
 import { canCompleteModule, canDiscontinue, canEnroll, canEnterModule, canReopenModule, canSeeContacts, type Actor } from '../data/roles';
 import { evaluateEligibility } from '../utils/clinical';
 import { getAccess, isIneligible, isRecordLocked, strictAccess } from '../utils/gating';
 import { ALL_MODULE_IDS, createUid, emptyCrf, emptyMeta, moduleKey } from '../utils/participant';
 import { validateModule } from '../utils/validation';
 import type { CrfData, M10Reason, ModuleId, ModuleMeta, Participant } from '../types/crf';
+import { decryptContact, encryptContact } from './contactCrypto';
+import { isDuplicateKey } from './mongo/client';
+import type { Reads, Tx } from './mongo/tx';
 
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-    public details?: unknown,
-  ) {
-    super(message);
-  }
-}
+import { ApiError } from './errors';
+export { ApiError };
 
 export interface ActingUser extends Actor {
   id: string;
@@ -22,59 +18,72 @@ export interface ActingUser extends Actor {
   roleLabel: string;
 }
 
-type Queryable = Pick<PoolClient, 'query'>;
-
 const CONTACT_FIELDS = ['phone', 'address'] as const;
-
-function encKey(): string {
-  const key = process.env.CONTACT_ENC_KEY;
-  if (!key || key.length < 32) throw new Error('CONTACT_ENC_KEY must be set (at least 32 characters) — see web/.env.example');
-  return key;
-}
 
 // ---------------------------------------------------------------------------
 // Reading
 // ---------------------------------------------------------------------------
 
-interface ModuleRow {
+interface ParticipantDoc {
+  _id: string;
+  discontinuation_requested: boolean;
+  created_at: Date;
+  created_by: string | null;
+  updated_at: Date;
+}
+
+interface ModuleDoc {
+  _id: string;
   participant_uid: string;
   module_id: number;
   data: Record<string, unknown>;
   completed: boolean;
+  completed_by: string | null;
   completed_by_name: string;
   completed_role: string;
   completed_at: Date | null;
   editing: boolean;
   draft_saved_at: Date | null;
+  updated_at: Date;
+  updated_by: string | null;
+}
+
+interface EditDoc {
+  participant_uid: string;
+  module_id: number;
+  at: Date;
+  by_name: string;
+  role: string;
+  reason: string;
+}
+
+interface ContactDoc {
+  _id: string;
+  phone_enc: Binary | null;
+  address_enc: Binary | null;
 }
 
 /** Loads participants in the app's shape; phone and address are blanked unless `actor` may see them. */
-export async function loadParticipants(q: Queryable, actor: Actor, uids?: string[]): Promise<Participant[]> {
-  const filter = uids ?? null;
-  // Sequential on purpose: `q` may be a single transaction client, which runs one query at a time.
-  const ps = await q.query<{ uid: string; discontinuation_requested: boolean; created_at: Date; updated_at: Date }>(
-    'select * from participants where ($1::text[] is null or uid = any($1)) order by updated_at desc',
-    [filter],
-  );
-  const mods = await q.query<ModuleRow>('select * from crf_modules where ($1::text[] is null or participant_uid = any($1))', [filter]);
-  const edits = await q.query<{ participant_uid: string; module_id: number; at: Date; by_name: string; role: string; reason: string }>(
-    'select * from module_edit_reasons where ($1::text[] is null or participant_uid = any($1)) order by at',
-    [filter],
-  );
-  const modByKey = new Map(mods.rows.map((m) => [`${m.participant_uid}|${m.module_id}`, m]));
+export async function loadParticipants(q: Reads, actor: Actor, uids?: string[]): Promise<Participant[]> {
+  const byUid = uids ? { _id: { $in: uids } as never } : {};
+  const ofUid = uids ? { participant_uid: { $in: uids } } : {};
+  const ps = await q.find<ParticipantDoc>('participants', byUid, { sort: { updated_at: -1 } });
+  const mods = await q.find<ModuleDoc>('crf_modules', ofUid);
+  const edits = await q.find<EditDoc>('module_edit_reasons', ofUid, { sort: { at: 1, _id: 1 } });
+  const modByKey = new Map(mods.map((m) => [`${m.participant_uid}|${m.module_id}`, m]));
   const editsByKey = new Map<string, ModuleMeta['edits']>();
-  for (const e of edits.rows) {
+  for (const e of edits) {
     const k = `${e.participant_uid}|${e.module_id}`;
     editsByKey.set(k, [...(editsByKey.get(k) ?? []), { at: e.at.toISOString(), by: e.by_name, role: e.role, reason: e.reason }]);
   }
 
-  const participants: Participant[] = ps.rows.map((row) => {
+  const participants: Participant[] = ps.map((row) => {
     const template = emptyCrf();
     const data = {} as CrfData;
     const meta = {} as Record<ModuleId, ModuleMeta>;
     ALL_MODULE_IDS.forEach((id) => {
       const key = moduleKey(id);
-      const m = modByKey.get(`${row.uid}|${id}`);
+      const m = modByKey.get(`${row._id}|${id}`);
       (data as unknown as Record<string, unknown>)[key] = { ...template[key], ...(m?.data ?? {}) };
       meta[id] = {
         ...emptyMeta(),
@@ -84,12 +93,12 @@ export async function loadParticipants(q: Queryable, actor: Actor, uids?: string
         completedAt: m?.completed_at?.toISOString() ?? '',
         editing: m?.editing ?? false,
         draftSavedAt: m?.draft_saved_at?.toISOString() ?? '',
-        edits: editsByKey.get(`${row.uid}|${id}`) ?? [],
+        edits: editsByKey.get(`${row._id}|${id}`) ?? [],
       };
     });
     const showContacts = canSeeContacts(actor, meta[1]);
     return {
-      uid: row.uid,
+      uid: row._id,
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
       discontinuationRequested: row.discontinuation_requested,
@@ -102,29 +111,24 @@ export async function loadParticipants(q: Queryable, actor: Actor, uids?: string
   // Decrypt phone and address only for the records this user may see; the rest stay blank (from the template).
   const visible = participants.filter((p) => !p.contactsHidden).map((p) => p.uid);
   if (visible.length) {
-    const contacts = await q.query<{ participant_uid: string; phone: string | null; address: string | null }>(
-      `select participant_uid, pgp_sym_decrypt(phone_enc, $2) as phone, pgp_sym_decrypt(address_enc, $2) as address
-         from participant_contacts where participant_uid = any($1)`,
-      [visible, encKey()],
-    );
-    const byUid = new Map(contacts.rows.map((c) => [c.participant_uid, c]));
+    const contacts = new Map((await q.find<ContactDoc>('participant_contacts', { _id: { $in: visible } as never })).map((c) => [c._id, c]));
     for (const p of participants) {
-      const c = byUid.get(p.uid);
-      if (c) p.data.m1 = { ...p.data.m1, phone: c.phone ?? '', address: c.address ?? '' };
+      const c = contacts.get(p.uid);
+      if (c) p.data.m1 = { ...p.data.m1, phone: decryptContact(c.phone_enc, p.uid, 'phone'), address: decryptContact(c.address_enc, p.uid, 'address') };
     }
   }
   return participants;
 }
 
-/** Full record (contacts included) for server-side checks, with the participant row locked for this transaction. */
-async function loadForUpdate(q: Queryable, uid: string): Promise<Participant> {
-  const lock = await q.query('select uid from participants where uid = $1 for update', [uid]);
-  if (!lock.rowCount) throw new ApiError(404, 'Participant not found');
-  const [p] = await loadParticipants(q, { role: 'pi', isAdmin: true, delegations: [] }, [uid]);
+/** Full record (contacts included) for server-side checks, with this participant locked for the transaction. */
+async function loadForUpdate(tx: Tx, uid: string): Promise<Participant> {
+  await tx.lock(`participant:${uid}`);
+  if (!(await tx.findOne('participants', { _id: uid as never }, { projection: { _id: 1 } }))) throw new ApiError(404, 'Participant not found');
+  const [p] = await loadParticipants(tx, { role: 'pi', isAdmin: true, delegations: [] }, [uid]);
   return p;
 }
 
-async function loadOne(q: Queryable, actor: Actor, uid: string): Promise<Participant> {
+async function loadOne(q: Reads, actor: Actor, uid: string): Promise<Participant> {
   const [p] = await loadParticipants(q, actor, [uid]);
   if (!p) throw new ApiError(404, 'Participant not found');
   return p;
@@ -134,17 +138,25 @@ async function loadOne(q: Queryable, actor: Actor, uid: string): Promise<Partici
 // Writing
 // ---------------------------------------------------------------------------
 
-async function writeContacts(q: Queryable, uid: string, userId: string | null, contacts: { phone?: string; address?: string }) {
-  await q.query(
-    `insert into participant_contacts (participant_uid, phone_enc, address_enc, updated_by)
-       values ($1, pgp_sym_encrypt(coalesce($2, ''), $4), pgp_sym_encrypt(coalesce($3, ''), $4), $5)
-     on conflict (participant_uid) do update set
-       phone_enc   = case when $2::text is null then participant_contacts.phone_enc else excluded.phone_enc end,
-       address_enc = case when $3::text is null then participant_contacts.address_enc else excluded.address_enc end,
-       updated_at  = now(),
-       updated_by  = excluded.updated_by`,
-    [uid, contacts.phone ?? null, contacts.address ?? null, encKey(), userId],
-  );
+/** Stores phone and/or address (encrypted). A field that is not given keeps its stored value. */
+async function writeContacts(tx: Tx, uid: string, userId: string | null, contacts: { phone?: string; address?: string }) {
+  const now = new Date();
+  const existing = await tx.findOne('participant_contacts', { _id: uid as never }, { projection: { _id: 1 } });
+  if (!existing) {
+    await tx.insertOne('participant_contacts', {
+      _id: uid,
+      participant_uid: uid,
+      phone_enc: encryptContact(contacts.phone ?? '', uid, 'phone'),
+      address_enc: encryptContact(contacts.address ?? '', uid, 'address'),
+      updated_at: now,
+      updated_by: userId,
+    });
+    return;
+  }
+  const set: Record<string, unknown> = { updated_at: now, updated_by: userId };
+  if (contacts.phone !== undefined) set.phone_enc = encryptContact(contacts.phone, uid, 'phone');
+  if (contacts.address !== undefined) set.address_enc = encryptContact(contacts.address, uid, 'address');
+  await tx.updateOne('participant_contacts', { _id: uid as never }, { $set: set });
 }
 
 function stripContacts(m1: Record<string, unknown>) {
@@ -153,49 +165,68 @@ function stripContacts(m1: Record<string, unknown>) {
   return rest;
 }
 
+/** A module document as stored when nothing has been entered yet. */
+function newModuleDoc(uid: string, id: ModuleId, data: unknown, userId: string | null, now: Date) {
+  return {
+    _id: `${uid}:${id}`,
+    participant_uid: uid,
+    module_id: id,
+    data,
+    completed: false,
+    completed_by: null,
+    completed_by_name: '',
+    completed_role: '',
+    completed_at: null,
+    editing: false,
+    draft_saved_at: null,
+    updated_at: now,
+    updated_by: userId,
+  };
+}
+
 /** Inserts a complete participant record as-is (used by the seed script). */
-export async function insertParticipant(q: Queryable, p: Participant, userIdsByName: Record<string, string>, createdBy: string | null) {
-  await q.query(
-    'insert into participants (uid, discontinuation_requested, created_at, created_by, updated_at) values ($1, $2, $3, $4, $5)',
-    [p.uid, p.discontinuationRequested, p.createdAt, createdBy, p.updatedAt],
-  );
+export async function insertParticipant(tx: Tx, p: Participant, userIdsByName: Record<string, string>, createdBy: string | null) {
+  await tx.insertOne('participants', {
+    _id: p.uid,
+    discontinuation_requested: p.discontinuationRequested,
+    created_at: new Date(p.createdAt),
+    created_by: createdBy,
+    updated_at: new Date(p.updatedAt),
+  });
   for (const id of ALL_MODULE_IDS) {
     const key = moduleKey(id);
     const m = p.meta[id];
     const data = id === 1 ? stripContacts(p.data.m1 as unknown as Record<string, unknown>) : p.data[key];
-    await q.query(
-      `insert into crf_modules (participant_uid, module_id, data, completed, completed_by, completed_by_name, completed_role,
-                                completed_at, editing, draft_saved_at, updated_by)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      [
-        p.uid, id, JSON.stringify(data), m.completed, userIdsByName[m.completedBy] ?? null, m.completedBy, m.completedRole,
-        m.completedAt || null, m.editing, m.draftSavedAt || null, createdBy,
-      ],
-    );
+    await tx.insertOne('crf_modules', {
+      ...newModuleDoc(p.uid, id, data, createdBy, new Date(p.updatedAt)),
+      completed: m.completed,
+      completed_by: userIdsByName[m.completedBy] ?? null,
+      completed_by_name: m.completedBy,
+      completed_role: m.completedRole,
+      completed_at: m.completedAt ? new Date(m.completedAt) : null,
+      editing: m.editing,
+      draft_saved_at: m.draftSavedAt ? new Date(m.draftSavedAt) : null,
+    });
     for (const e of m.edits) {
-      await q.query(
-        'insert into module_edit_reasons (participant_uid, module_id, at, user_id, by_name, role, reason) values ($1, $2, $3, $4, $5, $6, $7)',
-        [p.uid, id, e.at, userIdsByName[e.by] ?? null, e.by, e.role, e.reason],
-      );
+      await tx.insertOne('module_edit_reasons', { participant_uid: p.uid, module_id: id, at: new Date(e.at), user_id: userIdsByName[e.by] ?? null, by_name: e.by, role: e.role, reason: e.reason });
     }
   }
-  await writeContacts(q, p.uid, createdBy, { phone: p.data.m1.phone, address: p.data.m1.address });
+  await writeContacts(tx, p.uid, createdBy, { phone: p.data.m1.phone, address: p.data.m1.address });
 }
 
-export async function createParticipant(q: Queryable, user: ActingUser): Promise<Participant> {
+export async function createParticipant(tx: Tx, user: ActingUser): Promise<Participant> {
   if (!canEnroll(user)) throw new ApiError(403, 'Your role cannot enroll participants');
   const uid = createUid();
   const template = emptyCrf();
-  await q.query('insert into participants (uid, created_by) values ($1, $2)', [uid, user.id]);
+  const now = new Date();
+  await tx.insertOne('participants', { _id: uid, discontinuation_requested: false, created_at: now, created_by: user.id, updated_at: now });
   for (const id of ALL_MODULE_IDS) {
     const key = moduleKey(id);
     const data = id === 1 ? stripContacts(template.m1 as unknown as Record<string, unknown>) : template[key];
-    await q.query('insert into crf_modules (participant_uid, module_id, data, updated_by) values ($1, $2, $3, $4)', [
-      uid, id, JSON.stringify(data), user.id,
-    ]);
+    await tx.insertOne('crf_modules', newModuleDoc(uid, id, data, user.id, now));
   }
-  await writeContacts(q, uid, user.id, { phone: '', address: '' });
-  return loadOne(q, user, uid);
+  await writeContacts(tx, uid, user.id, { phone: '', address: '' });
+  return loadOne(tx, user, uid);
 }
 
 /** Keeps only known fields whose value has the same shape as the empty CRF template. */
@@ -225,12 +256,14 @@ function assertEditable(p: Participant, user: ActingUser, id: ModuleId) {
   }
 }
 
-async function touch(q: Queryable, uid: string) {
-  await q.query('update participants set updated_at = now() where uid = $1', [uid]);
+async function touch(tx: Tx, uid: string) {
+  await tx.updateOne('participants', { _id: uid as never }, { $set: { updated_at: new Date() } });
 }
 
-export async function patchModule(q: Queryable, user: ActingUser, uid: string, id: ModuleId, rawPatch: unknown): Promise<void> {
-  const p = await loadForUpdate(q, uid);
+const moduleId = (uid: string, id: ModuleId) => `${uid}:${id}` as never;
+
+export async function patchModule(tx: Tx, user: ActingUser, uid: string, id: ModuleId, rawPatch: unknown): Promise<void> {
+  const p = await loadForUpdate(tx, uid);
   assertEditable(p, user, id);
   const patch = sanitizePatch(id, rawPatch);
 
@@ -240,36 +273,32 @@ export async function patchModule(q: Queryable, user: ActingUser, uid: string, i
       if (f in patch) contacts[f] = String(patch[f]);
       delete patch[f];
     });
-    if (Object.keys(contacts).length) await writeContacts(q, uid, user.id, contacts);
+    if (Object.keys(contacts).length) await writeContacts(tx, uid, user.id, contacts);
   }
 
   if (Object.keys(patch).length) {
+    const set: Record<string, unknown> = { updated_at: new Date(), updated_by: user.id };
+    for (const [k, v] of Object.entries(patch)) set[`data.${k}`] = v;
     try {
-      await q.query(
-        `update crf_modules set data = data || $3::jsonb, updated_at = now(), updated_by = $4
-          where participant_uid = $1 and module_id = $2`,
-        [uid, id, JSON.stringify(patch), user.id],
-      );
+      await tx.updateOne('crf_modules', { _id: moduleId(uid, id) }, { $set: set });
     } catch (err) {
-      if ((err as { code?: string }).code === '23505') throw new ApiError(409, 'This Participant ID is already in use');
+      if (isDuplicateKey(err)) throw new ApiError(409, 'This Participant ID is already in use');
       throw err;
     }
   }
-  await touch(q, uid);
+  await touch(tx, uid);
 }
 
-export async function saveDraft(q: Queryable, user: ActingUser, uid: string, id: ModuleId): Promise<Participant> {
-  const p = await loadForUpdate(q, uid);
+export async function saveDraft(tx: Tx, user: ActingUser, uid: string, id: ModuleId): Promise<Participant> {
+  const p = await loadForUpdate(tx, uid);
   assertEditable(p, user, id);
-  await q.query('update crf_modules set draft_saved_at = now(), updated_by = $3 where participant_uid = $1 and module_id = $2', [
-    uid, id, user.id,
-  ]);
-  await touch(q, uid);
-  return loadOne(q, user, uid);
+  await tx.updateOne('crf_modules', { _id: moduleId(uid, id) }, { $set: { draft_saved_at: new Date(), updated_by: user.id } });
+  await touch(tx, uid);
+  return loadOne(tx, user, uid);
 }
 
-export async function completeModule(q: Queryable, user: ActingUser, uid: string, id: ModuleId): Promise<Participant> {
-  const p = await loadForUpdate(q, uid);
+export async function completeModule(tx: Tx, user: ActingUser, uid: string, id: ModuleId): Promise<Participant> {
+  const p = await loadForUpdate(tx, uid);
   const meta = p.meta[id];
   const access = strictAccess(p, id);
   if (!(access === 'current' || access === 'open' || (access === 'complete' && meta.editing))) {
@@ -281,74 +310,67 @@ export async function completeModule(q: Queryable, user: ActingUser, uid: string
   const errors = validateModule(id, p);
   if (Object.keys(errors).length) throw new ApiError(422, 'Some fields need attention before locking', errors);
 
-  await q.query(
-    `update crf_modules set
-        completed = true, editing = false,
-        completed_by      = coalesce(completed_by, $3),
-        completed_by_name = case when completed_by_name = '' then $4 else completed_by_name end,
-        completed_role    = case when completed_role = '' then $5 else completed_role end,
-        completed_at      = coalesce(completed_at, now()),
-        updated_at = now(), updated_by = $3
-      where participant_uid = $1 and module_id = $2`,
-    [uid, id, user.id, user.name, user.roleLabel],
+  // Who locked it first stays on record: later re-locks after a correction do not replace the name.
+  const mod = await tx.findOne<ModuleDoc>('crf_modules', { _id: moduleId(uid, id) });
+  const now = new Date();
+  await tx.updateOne(
+    'crf_modules',
+    { _id: moduleId(uid, id) },
+    {
+      $set: {
+        completed: true,
+        editing: false,
+        completed_by: mod?.completed_by ?? user.id,
+        completed_by_name: mod?.completed_by_name || user.name,
+        completed_role: mod?.completed_role || user.roleLabel,
+        completed_at: mod?.completed_at ?? now,
+        updated_at: now,
+        updated_by: user.id,
+      },
+    },
   );
 
   // A failed eligibility check closes the participant out as a screen failure (Module 2 data is unchanged by locking).
   if (id === 2 && evaluateEligibility(p.data.m2).eligible === false) {
-    await q.query(
-      `update crf_modules set data = data || '{"status": "discontinued", "reason": "screen_failure"}'::jsonb, updated_by = $2
-        where participant_uid = $1 and module_id = 10`,
-      [uid, user.id],
-    );
+    await tx.updateOne('crf_modules', { _id: moduleId(uid, 10) }, { $set: { 'data.status': 'discontinued', 'data.reason': 'screen_failure', updated_by: user.id } });
   }
-  await touch(q, uid);
-  return loadOne(q, user, uid);
+  await touch(tx, uid);
+  return loadOne(tx, user, uid);
 }
 
 /** Reopens a locked module. The reason is stored and attached to every audited change in this transaction. */
-export async function reopenModule(q: Queryable, user: ActingUser, uid: string, id: ModuleId, reasonRaw: unknown): Promise<Participant> {
+export async function reopenModule(tx: Tx, user: ActingUser, uid: string, id: ModuleId, reasonRaw: unknown): Promise<Participant> {
   const reason = typeof reasonRaw === 'string' ? reasonRaw.trim() : '';
   if (!reason) throw new ApiError(400, 'A reason is required to edit a locked module');
-  const p = await loadForUpdate(q, uid);
+  const p = await loadForUpdate(tx, uid);
   if (!p.meta[id].completed) throw new ApiError(409, `Module ${id} is not locked`);
   if (isRecordLocked(p) && id !== 10) throw new ApiError(409, 'The record is closed');
   if (!canReopenModule(user, id)) throw new ApiError(403, `Your role cannot edit Module ${id}`);
 
-  await q.query(
-    'insert into module_edit_reasons (participant_uid, module_id, user_id, by_name, role, reason) values ($1, $2, $3, $4, $5, $6)',
-    [uid, id, user.id, user.name, user.roleLabel, reason],
-  );
-  await q.query('update crf_modules set editing = true, updated_by = $3 where participant_uid = $1 and module_id = $2', [uid, id, user.id]);
-  await touch(q, uid);
-  return loadOne(q, user, uid);
+  await tx.insertOne('module_edit_reasons', { participant_uid: uid, module_id: id, at: new Date(), user_id: user.id, by_name: user.name, role: user.roleLabel, reason });
+  await tx.updateOne('crf_modules', { _id: moduleId(uid, id) }, { $set: { editing: true, updated_by: user.id } });
+  await touch(tx, uid);
+  return loadOne(tx, user, uid);
 }
 
 const M10_REASONS: M10Reason[] = ['withdrawal', 'toxicity', 'resistance', 'ltfu', 'death', 'screen_failure'];
 
-export async function discontinue(q: Queryable, user: ActingUser, uid: string, reasonRaw: unknown): Promise<Participant> {
+export async function discontinue(tx: Tx, user: ActingUser, uid: string, reasonRaw: unknown): Promise<Participant> {
   if (!canDiscontinue(user)) throw new ApiError(403, 'Your role cannot discontinue participants');
-  const p = await loadForUpdate(q, uid);
+  const p = await loadForUpdate(tx, uid);
   if (isRecordLocked(p) || isIneligible(p) || p.discontinuationRequested) throw new ApiError(409, 'This participant cannot be discontinued');
   const reason = M10_REASONS.includes(reasonRaw as M10Reason) ? (reasonRaw as M10Reason) : p.data.m10.reason;
 
-  await q.query('update participants set discontinuation_requested = true where uid = $1', [uid]);
-  await q.query(
-    `update crf_modules set data = data || jsonb_build_object('status', 'discontinued', 'reason', $2::text), updated_by = $3
-      where participant_uid = $1 and module_id = 10`,
-    [uid, reason, user.id],
-  );
-  await touch(q, uid);
-  return loadOne(q, user, uid);
+  await tx.updateOne('participants', { _id: uid as never }, { $set: { discontinuation_requested: true } });
+  await tx.updateOne('crf_modules', { _id: moduleId(uid, 10) }, { $set: { 'data.status': 'discontinued', 'data.reason': reason, updated_by: user.id } });
+  await touch(tx, uid);
+  return loadOne(tx, user, uid);
 }
 
 /** The latest reopen reason for a module being edited, so audited field changes carry it. */
-export async function currentEditReason(q: Queryable, uid: string, id: ModuleId): Promise<string | undefined> {
-  const { rows } = await q.query<{ reason: string }>(
-    `select r.reason from module_edit_reasons r
-       join crf_modules m on m.participant_uid = r.participant_uid and m.module_id = r.module_id and m.editing
-      where r.participant_uid = $1 and r.module_id = $2
-      order by r.at desc limit 1`,
-    [uid, id],
-  );
-  return rows[0]?.reason;
+export async function currentEditReason(tx: Tx, uid: string, id: ModuleId): Promise<string | undefined> {
+  const mod = await tx.findOne<ModuleDoc>('crf_modules', { _id: moduleId(uid, id) }, { projection: { editing: 1 } });
+  if (!mod?.editing) return undefined;
+  const [latest] = await tx.find<EditDoc>('module_edit_reasons', { participant_uid: uid, module_id: id }, { sort: { at: -1, _id: -1 }, limit: 1 });
+  return latest?.reason;
 }

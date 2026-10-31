@@ -1,4 +1,4 @@
-import { withTransaction } from '../../../../server/db';
+import { withTransaction } from '../../../../server/mongo/tx';
 import { apiHandler } from '../../../../server/http';
 import { listAccessRequests } from '../../../../server/accessRequests';
 

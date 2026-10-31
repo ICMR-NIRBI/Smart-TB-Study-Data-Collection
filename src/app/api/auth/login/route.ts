@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isSameOrigin, signIn } from '../../../../server/auth';
 import { errorResponse, readJson } from '../../../../server/http';
-import { ApiError } from '../../../../server/participants';
+import { ApiError } from '../../../../server/errors';
 
 export async function POST(req: Request) {
   try {

@@ -1,4 +1,4 @@
-import { getPool, withTransaction } from '../../../../server/db';
+import { reader, withTransaction } from '../../../../server/mongo/tx';
 import { apiHandler, readJson } from '../../../../server/http';
 import { ApiError, discontinue, loadParticipants } from '../../../../server/participants';
 
@@ -7,7 +7,7 @@ type Ctx = { params: Promise<{ uid: string }> };
 export async function GET(_req: Request, { params }: Ctx) {
   const { uid } = await params;
   return apiHandler(async (user) => {
-    const [participant] = await loadParticipants(getPool(), user, [uid]);
+    const [participant] = await loadParticipants(reader, user, [uid]);
     if (!participant) throw new ApiError(404, 'Participant not found');
     return { participant };
   });

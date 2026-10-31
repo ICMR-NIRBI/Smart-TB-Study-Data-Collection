@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isSameOrigin, listTestAccounts, signInAsTestAccount, testLoginEnabled } from '../../../../server/auth';
 import { errorResponse, readJson } from '../../../../server/http';
-import { ApiError } from '../../../../server/participants';
+import { ApiError } from '../../../../server/errors';
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
 

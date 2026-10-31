@@ -1,6 +1,6 @@
-import { withTransaction } from '../../../../../server/db';
+import { withTransaction } from '../../../../../server/mongo/tx';
 import { apiHandler, readJson } from '../../../../../server/http';
-import { ApiError } from '../../../../../server/participants';
+import { ApiError } from '../../../../../server/errors';
 import { approveAccessRequest, assertPi, expireStale, rejectAccessRequest } from '../../../../../server/accessRequests';
 
 type Ctx = { params: Promise<{ id: string }> };
