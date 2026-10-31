@@ -2,7 +2,7 @@
 
 Read this and `MONGODB_MIGRATION_PLAN.md` at the start of a session. Do not re-read the whole history.
 
-**WARNING: the working tree is mid-migration (since phase 3).** Sign-in and roles now use MongoDB while staff, invitations, requests and participants still use PostgreSQL, so this tree does not work as an app and must not be deployed. The live site runs the committed `main` (38b173f, PostgreSQL). If an unrelated fix has to be committed and deployed meanwhile, stage only that fix (never `git add -A`), or finish the move first.
+**DONE: the live site runs on MongoDB since 2026-10-31 (commit a3fb6e5).** See "Phase 8" below for what remains (removing PostgreSQL after the 7-day fallback period).
 
 ## Phase 0: prepare (complete)
 
@@ -167,6 +167,22 @@ Server rehearsal (done 2026-10-31, with approval): the uncommitted code (no env 
 Commands from OPERATIONS.md now tried on the server: the monthly test restore (all of it). Still to try there at the cut-over: `deploy/backup.sh` itself (installed as `/usr/local/bin/smarttb-backup`), the full restore with `--replace`, `db:counts` against the live database, `db:create-admin`, `db:setup` (password rotation).
 
 Phase 7 is complete. Next: phase 8, the cut-over (checklist above), in an agreed window.
+
+## Phase 8: cut-over (done 2026-10-31, about 10:05 to 10:10 UTC)
+
+1. Final PostgreSQL backups: the usual hourly file (`smarttb-20261031T100522Z.dump.enc`) and an encrypted full dump kept aside as the fallback, `/opt/smarttb/backups/pg-final-20261031T100545Z.dump.enc` (checked readable with `pg_restore --list`; its name is not picked up by the desktop pull or the 72-copy clean-up).
+2. App stopped.
+3. From a temporary copy of the committed code: `db:setup` (logins refreshed with new random passwords, schema applied), the old phase-1 collections dropped (all empty except three test markers left by the phase-1 checks, `tag: chk16762`, inspected and dropped), `db:migrate`, **the move** (5 accounts, 9 setup links, 6 roles, 106 audit entries; all read back identical), `db:check-moved` 7/7.
+4. New `smarttb.service` (reads `/opt/smarttb/.env.mongo`) and new backup script installed; the old ones kept as `/root/smarttb.service.pg-version` and `/root/smarttb-backup.pg-version`; the server's deploy folder replaced by the new one (old one at `/home/azureuser/deploy.pg-version`; its deploy.sh still had the PostgreSQL migrate step).
+5. Deployed a3fb6e5 with the new deploy.sh: build, schema, restart, health check OK.
+6. Live checks: `db:preflight` all passed; counts as expected (plus the DATA_MOVE audit entry); the new hourly backup ran, verified itself, and test-restored (128 documents) with the OPERATIONS.md commands; a sign-in attempt through the public address answered from MongoDB; `/api/health` ok.
+7. PostgreSQL kept running as the way back, set read-only (`ALTER DATABASE smarttb SET default_transaction_read_only = on`).
+
+Everyone has to sign in again (sessions were not moved). Passwords are unchanged.
+
+Way back, if needed in the first days: stop smarttb, reinstall `/root/smarttb.service.pg-version` and `/root/smarttb-backup.pg-version`, `ALTER DATABASE smarttb RESET default_transaction_read_only`, deploy commit 38b173f with `/home/azureuser/deploy.pg-version/deploy.sh 38b173f`. Anything entered in MongoDB since the switch would have to be re-entered.
+
+Left to do after 7 days (around 2026-11-07), if all is well: `systemctl disable --now postgresql`; keep the `pg-final` dump offline; remove `src/server/db.ts`, `src/server/dbSsl.ts`, `db/migrations`, the `pg` package, `tests/e2e/lib/store.postgres.mjs`, `scripts/mongo/move-from-postgres.mts`; remove the PostgreSQL lines (`DATABASE_URL`, `DATABASE_OWNER_URL`) from `/opt/smarttb/.env`; delete `/root/*.pg-version` and `/home/azureuser/deploy.pg-version`.
 
 ## Rules for later phases
 
