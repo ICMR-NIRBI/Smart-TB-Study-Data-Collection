@@ -184,6 +184,14 @@ Way back, if needed in the first days: stop smarttb, reinstall `/root/smarttb.se
 
 Left to do after 7 days (around 2026-11-07), if all is well: `systemctl disable --now postgresql`; keep the `pg-final` dump offline; remove `src/server/db.ts`, `src/server/dbSsl.ts`, `db/migrations`, the `pg` package, `tests/e2e/lib/store.postgres.mjs`, `scripts/mongo/move-from-postgres.mts`; remove the PostgreSQL lines (`DATABASE_URL`, `DATABASE_OWNER_URL`) from `/opt/smarttb/.env`; delete `/root/*.pg-version` and `/home/azureuser/deploy.pg-version`.
 
+## Production-readiness audit (2026-10-31, deployed as 647499d)
+
+Fixed: Next.js 15.5.27 → 15.5.28 (critical unauthenticated RCE in the image optimiser, GHSA-2464-fhr4-w9xw; high DoS, GHSA-p3m5-59mp-jv5r); reopen reason minimum now enforced by the server (shared `MIN_EDIT_REASON_LENGTH`); used setup link page offers "Go to log in"; phone keyboards cannot auto-correct password boxes; sign-out checks the origin; unused `src/server/db.ts` removed.
+
+Accepted risk: `npm audit` still lists PostCSS 8.4.31 bundled inside Next (high/moderate, source-map file disclosure when processing attacker-supplied CSS). Next uses it only at build time on the app's own stylesheets, so it is not reachable by visitors. The fix requires Next 16 (major upgrade) — do it as its own piece of work.
+
+Not covered by the audit: a visual check of the screens in a browser (the browser automation could not open local pages); every page and API route was requested and checked instead. No content-security-policy header; no per-IP limit on sign-in (per-email lockout and scrypt cost only); plain HTTP until a domain exists.
+
 ## Rules for later phases
 
 - The routes and screens do not change. All changes stay in `src/server`, `scripts`, `db` and `tests/e2e/lib/store.mjs`.
