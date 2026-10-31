@@ -302,6 +302,9 @@ export function LoginView() {
                         ref={passwordRef}
                         id="login-password"
                         type={showPassword ? 'text' : 'password'}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
                         autoComplete="current-password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}

@@ -66,9 +66,13 @@ export function SetupView() {
               </Link>
             </div>
           ) : linkError ? (
-            <div className="space-y-3">
+            <div className="space-y-4">
               <h1 className="text-xl font-semibold text-ink">Link not valid</h1>
               <Alert tone="warn" title={linkError} />
+              <p className="text-sm text-ink-muted">If you already set your password with this link, it has done its job: log in instead.</p>
+              <Link href="/login" className="inline-flex min-h-[48px] w-full items-center justify-center rounded-lg bg-forest-700 px-5 font-semibold text-white hover:bg-forest-800">
+                Go to log in
+              </Link>
             </div>
           ) : !account ? (
             <div className="flex justify-center py-8 text-ink-muted" aria-busy="true">
@@ -91,6 +95,9 @@ export function SetupView() {
                   <input
                     id="new-password"
                     type={show ? 'text' : 'password'}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                     autoComplete="new-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -119,6 +126,9 @@ export function SetupView() {
                 <input
                   id="confirm-password"
                   type={show ? 'text' : 'password'}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   autoComplete="new-password"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}

@@ -4,6 +4,7 @@ import { evaluateEligibility } from '../utils/clinical';
 import { getAccess, isIneligible, isRecordLocked, strictAccess } from '../utils/gating';
 import { ALL_MODULE_IDS, createUid, emptyCrf, emptyMeta, moduleKey } from '../utils/participant';
 import { validateModule } from '../utils/validation';
+import { MIN_EDIT_REASON_LENGTH } from '../utils/accountRules';
 import type { CrfData, M10Reason, ModuleId, ModuleMeta, Participant } from '../types/crf';
 import { decryptContact, encryptContact } from './contactCrypto';
 import { isDuplicateKey } from './mongo/client';
@@ -341,7 +342,7 @@ export async function completeModule(tx: Tx, user: ActingUser, uid: string, id: 
 /** Reopens a locked module. The reason is stored and attached to every audited change in this transaction. */
 export async function reopenModule(tx: Tx, user: ActingUser, uid: string, id: ModuleId, reasonRaw: unknown): Promise<Participant> {
   const reason = typeof reasonRaw === 'string' ? reasonRaw.trim() : '';
-  if (!reason) throw new ApiError(400, 'A reason is required to edit a locked module');
+  if (reason.length < MIN_EDIT_REASON_LENGTH) throw new ApiError(400, `Give a reason of at least ${MIN_EDIT_REASON_LENGTH} characters to edit a locked module`);
   const p = await loadForUpdate(tx, uid);
   if (!p.meta[id].completed) throw new ApiError(409, `Module ${id} is not locked`);
   if (isRecordLocked(p) && id !== 10) throw new ApiError(409, 'The record is closed');

@@ -11,6 +11,9 @@ export const LOGIN_LOCKOUT_MS = 5 * 60 * 1000;
 /** Minimum length of the reason an administrator gives for an account change. */
 export const MIN_ADMIN_REASON_LENGTH = 5;
 
+/** Minimum length of the reason for reopening a locked CRF module (checked on the screen and on the server). */
+export const MIN_EDIT_REASON_LENGTH = 10;
+
 /** Why a new password is not acceptable, or null when it is. */
 export function passwordProblem(password: string, email: string): string | null {
   if (password.length < MIN_PASSWORD_LENGTH) return `Use at least ${MIN_PASSWORD_LENGTH} characters`;

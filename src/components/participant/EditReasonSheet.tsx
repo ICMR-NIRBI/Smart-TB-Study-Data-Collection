@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { MIN_EDIT_REASON_LENGTH } from '../../utils/accountRules';
 import { Sheet } from '../ui/Sheet';
 import { Button } from '../ui/Button';
 import { TextAreaField } from '../ui/TextAreaField';
@@ -10,7 +11,7 @@ interface EditReasonSheetProps {
   onConfirm: (reason: string) => void;
 }
 
-const MIN_LENGTH = 10;
+const MIN_LENGTH = MIN_EDIT_REASON_LENGTH;
 
 export function EditReasonSheet({ open, moduleId, onClose, onConfirm }: EditReasonSheetProps) {
   const [reason, setReason] = useState('');

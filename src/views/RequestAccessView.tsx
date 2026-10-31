@@ -132,6 +132,9 @@ export function RequestAccessView() {
                   <input
                     id="req-password"
                     type={show ? 'text' : 'password'}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                     autoComplete="new-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -159,6 +162,9 @@ export function RequestAccessView() {
                 <input
                   id="req-confirm"
                   type={show ? 'text' : 'password'}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   autoComplete="new-password"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}

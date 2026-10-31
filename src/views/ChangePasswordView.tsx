@@ -63,6 +63,9 @@ export function ChangePasswordView() {
               <input
                 id="current-password"
                 type={show ? 'text' : 'password'}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 autoComplete="current-password"
                 value={current}
                 onChange={(e) => setCurrent(e.target.value)}
@@ -80,6 +83,9 @@ export function ChangePasswordView() {
                 <input
                   id="new-password"
                   type={show ? 'text' : 'password'}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -109,6 +115,9 @@ export function ChangePasswordView() {
               <input
                 id="confirm-password"
                 type={show ? 'text' : 'password'}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 autoComplete="new-password"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}

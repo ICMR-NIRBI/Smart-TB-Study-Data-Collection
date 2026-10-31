@@ -141,6 +141,8 @@ check('nor drafted', r.status === 409, `${r.status}`);
 // --- reopening with a reason
 r = await act(ro, p1.uid, 1, { action: 'reopen', reason: '' });
 check('reopening needs a reason', r.status === 400, `${r.status}`);
+r = await act(dm, p1.uid, 1, { action: 'reopen', reason: 'too short' });
+check('and a reason of fewer than 10 characters is refused by the server too', r.status === 400 && /at least 10/.test(r.json.error), `${r.status} ${JSON.stringify(r.json)}`);
 r = await act(pk, p1.uid, 1, { action: 'reopen', reason: 'I want to look' });
 check('a PK scientist cannot reopen Module 1', r.status === 403, `${r.status}`);
 r = await act(dm, other.uid, 1, { action: 'reopen', reason: 'not locked' });
