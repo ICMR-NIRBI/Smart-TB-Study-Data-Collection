@@ -53,15 +53,22 @@ replication:
   replSetName: rs0
 CONF
 
-echo "==> Kernel 6.19 and newer workaround"
 # MongoDB 8.0.x refuses to start on Linux 6.19+ when the package's GLIBC_TUNABLES=glibc.pthread.rseq=0 is set
 # (SERVER-121912). Without it the server starts and logs one performance warning, which does not matter at this
-# data size. Re-test after any MongoDB or kernel update.
-mkdir -p /etc/systemd/system/mongod.service.d
-cat > /etc/systemd/system/mongod.service.d/rseq.conf <<'CONF'
+# data size. Only needed on those kernels: on older ones the package's own setting is the right one. Re-test after any
+# MongoDB or kernel update (a kernel update to 6.19+ means running this script again).
+KERNEL="$(uname -r | cut -d- -f1)"
+if [[ "$(printf '%s\n%s\n' 6.19 "$KERNEL" | sort -V | head -1)" == 6.19 ]]; then
+  echo "==> Kernel $KERNEL: applying the 6.19+ workaround"
+  mkdir -p /etc/systemd/system/mongod.service.d
+  cat > /etc/systemd/system/mongod.service.d/rseq.conf <<'CONF'
 [Service]
 UnsetEnvironment=GLIBC_TUNABLES
 CONF
+else
+  echo "==> Kernel $KERNEL: no workaround needed"
+  rm -f /etc/systemd/system/mongod.service.d/rseq.conf
+fi
 systemctl daemon-reload
 systemctl enable --now mongod
 sleep 5
