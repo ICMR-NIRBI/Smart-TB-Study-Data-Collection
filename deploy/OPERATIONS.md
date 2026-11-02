@@ -123,7 +123,7 @@ On the server:
 
     sudo systemctl start smarttb-backup
     sudo install -o smarttb -g smarttb -m 640 /tmp/smarttb.bundle /opt/smarttb/code.bundle
-    rm -rf /root/deploy /tmp/smarttb-src && git clone -q /tmp/smarttb.bundle /tmp/smarttb-src && cp -r /tmp/smarttb-src/deploy /root/deploy && rm -rf /tmp/smarttb-src
+    rm -rf /root/deploy /tmp/smarttb-src && git clone -q -b main /tmp/smarttb.bundle /tmp/smarttb-src && cp -r /tmp/smarttb-src/deploy /root/deploy && rm -rf /tmp/smarttb-src
     sudo bash /root/deploy/deploy.sh
 
 The script is run from a copy (/root/deploy) because the update replaces the files in /opt/smarttb/app while it runs.
