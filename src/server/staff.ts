@@ -301,6 +301,7 @@ async function hasRecords(tx: Tx, id: string): Promise<boolean> {
     tx.count('crf_modules', { $or: [{ completed_by: id }, { updated_by: id }] }),
     tx.count('module_edit_reasons', { user_id: id }),
     tx.count('participant_contacts', { updated_by: id }),
+    tx.count('crf_images', { uploaded_by: id }),
     tx.count('module_delegations', { granted_by: id, user_id: { $ne: id } }),
     tx.count('account_setup_tokens', { created_by: id, user_id: { $ne: id } }),
     tx.count('app_users', { updated_by: id, _id: { $ne: id } as never }),

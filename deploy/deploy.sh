@@ -24,6 +24,9 @@ echo "==> Fetching $REF"
 sudo -u smarttb -H git -C "$APP" fetch --prune origin
 sudo -u smarttb -H git -C "$APP" reset --hard "$REF"
 
+# Where Module 5 photos are kept (the service may write only here and in the build folder).
+install -d -o smarttb -g smarttb -m 750 /opt/smarttb/uploads
+
 echo "==> Installing dependencies and building"
 as_app "npm ci --no-audit --no-fund"
 as_app "npm run build"

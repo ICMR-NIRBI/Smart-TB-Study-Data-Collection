@@ -98,6 +98,10 @@ openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:BACKUP_PASSPHRASE -in
 
 Test a restore once a month into a scratch database (`OPERATIONS.md` section 6).
 
+Module 5 photos live in `/opt/smarttb/uploads` (files, not database records). The same hourly run puts the photos added
+since the last run into `smarttb-images-<time>.dump.enc` (same encryption, a `.tar.gz` inside). Those files are never
+pruned; restoring photos means unpacking all of them, oldest first, into the uploads folder (`OPERATIONS.md` section 6).
+
 ### A copy on another computer (restricted pull account)
 
 A PC can download the encrypted backups every hour with `deploy/pull-backups.ps1`. Give it its own key on a

@@ -5,10 +5,11 @@ Every command was tried on this server, except two that would change real accoun
 
 ## 1. Where things are
 
-- Server: Ubuntu 24.04, public IP 135.235.138.35, hosted by the institute (Azure VM named acip-vm-acaiproject)
-- Login user: azureuser (has sudo). Login is by key file only; passwords are switched off.
-- Key file: acip-vm-acaiproject_key.pem (laptop: D:\ServerKey\, desktop: C:\SMART-TB\). Never email it.
-- SSH is allowed only from the two whitelisted public IPs (laptop and desktop). The website is open to everyone on ports 80 and 443.
+- Server: Ubuntu 24.04, public IP 45.195.159.88, MilesWeb VPS (service SM-L2). (The earlier Azure server, 135.235.138.35, was cleared on 2026-11-02 and is no longer used.)
+- Login user: root. Login is by key file only; passwords are switched off (/etc/ssh/sshd_config.d/00-smarttb-keyonly.conf). The commands below start with `sudo`; as root that does nothing and is harmless.
+- Key file: smarttb_milesweb (on the developer's PC: C:\Users\<you>\.ssh\smarttb_milesweb). Never email it.
+- SSH is open to the internet but accepts keys only; fail2ban blocks addresses that keep failing. The website is open to everyone on ports 80 and 443. The database (27017) and the app (3000) are not reachable from outside.
+- A second, restricted login, backuppull, can only list and download the encrypted backups (deploy/README.md section 6).
 - App code: /opt/smarttb/app (owned by user smarttb)
 - Settings and secrets: /opt/smarttb/.env (readable by root and smarttb only), and the database passwords in /opt/smarttb/.env.mongo (readable by smarttb only)
 - Backups: /opt/smarttb/backups (hourly, encrypted, newest 72 kept)
@@ -25,14 +26,14 @@ Fill in before going live:
 
 On the laptop or desktop, in PowerShell:
 
-    ssh -i "D:\ServerKey\acip-vm-acaiproject_key.pem" azureuser@135.235.138.35
+    ssh -i "$HOME\.ssh\smarttb_milesweb" root@45.195.159.88
 
-On the desktop the key path is C:\SMART-TB\acip-vm-acaiproject_key.pem. Type `exit` to leave.
+Type `exit` to leave.
 
 If the connection hangs or times out:
-1. Find your public IP: open https://api.ipify.org in a browser. The laptop and desktop normally show 202.12.103.67 and 202.12.103.85.
-2. If the number is different, the campus address has changed or you are on another network. Send the new number to institute IT and ask them to allow it for SSH (port 22).
-3. If the number is the same, ask IT whether the server is running and whether the network rules were changed.
+1. Check the server is running in the MilesWeb client area (service SM-L2). The VNC console there works even when SSH does not.
+2. Too many failed attempts from your address get it blocked by fail2ban for a while. Wait 10 minutes, or unblock it from the console (section 4, "Blocked by fail2ban").
+3. "Permission denied (publickey)": the wrong key file was used, or it is missing from /root/.ssh/authorized_keys.
 
 If it says "Permission denied (publickey)": wrong user name or the wrong key file.
 If it says "UNPROTECTED PRIVATE KEY FILE": run
@@ -116,19 +117,28 @@ The code comes from the developer's PC as a single file (a git bundle), because 
 On the developer's PC, in the project folder:
 
     git bundle create smarttb.bundle main
-    scp -i "<key>" smarttb.bundle azureuser@135.235.138.35:/tmp/smarttb.bundle
+    scp -i "<key>" smarttb.bundle root@45.195.159.88:/tmp/smarttb.bundle
 
 On the server:
 
+    sudo systemctl start smarttb-backup
     sudo install -o smarttb -g smarttb -m 640 /tmp/smarttb.bundle /opt/smarttb/code.bundle
-    sudo bash /opt/smarttb/app/deploy/deploy.sh
+    rm -rf /root/deploy /tmp/smarttb-src && git clone -q /tmp/smarttb.bundle /tmp/smarttb-src && cp -r /tmp/smarttb-src/deploy /root/deploy && rm -rf /tmp/smarttb-src
+    sudo bash /root/deploy/deploy.sh
+
+The script is run from a copy (/root/deploy) because the update replaces the files in /opt/smarttb/app while it runs.
+If an update changes deploy/smarttb.service, deploy/backup.sh or deploy/backup-serve.sh, install them too (before deploy.sh):
+
+    sudo install -m 644 /root/deploy/smarttb.service /etc/systemd/system/ && sudo systemctl daemon-reload
+    sudo install -m 755 /root/deploy/backup.sh /usr/local/bin/smarttb-backup
+    sudo install -m 755 /root/deploy/backup-serve.sh /usr/local/bin/smarttb-backup-serve
 
 The script fetches, builds, applies database changes, restarts and checks health. It prints "health check OK" when it works. The site is unavailable for about a minute.
 
 Go back to an earlier version (use the short commit code from the log):
 
     sudo -u smarttb git -C /opt/smarttb/app log --oneline -10
-    sudo bash /opt/smarttb/app/deploy/deploy.sh <commit>
+    sudo bash /root/deploy/deploy.sh <commit>
 
 Database changes are not undone by going back. Never edit files inside /opt/smarttb/app by hand: the next update overwrites them.
 
@@ -137,6 +147,8 @@ Take a backup immediately before every update: `sudo systemctl start smarttb-bac
 ## 6. Backups
 
 What they are: every hour the server writes one encrypted file with the whole database (participants, forms, staff accounts, encrypted contact details, audit trail). File names look like smarttb-20261026T095908Z.dump.enc (UTC time). The files can only be opened with the backup passphrase.
+
+Module 5 photos are files in /opt/smarttb/uploads, not in the database. In the same hourly run, the photos added since the last run go into one more encrypted file, smarttb-images-<time>.dump.enc (same passphrase). These are only written when there are new photos and are never deleted, on the server or on the desktop: together they hold every photo. The list of photos already archived is /opt/smarttb/backups/.images-archived; deleting it makes the next run archive every photo again (harmless, just larger).
 
 Check them:
 
@@ -148,10 +160,10 @@ Check them:
 The line "Object storage not configured" in the log is normal while no cloud bucket is set up.
 
 ### The desktop copy
-The desktop downloads new files every hour (Task Scheduler job "SMART-TB backup pull") into C:\SMART-TB-Backups.
+The desktop downloads new files every hour (Task Scheduler job "SMART-TB backup pull MilesWeb") into C:\SMART-TB-Backups, through the restricted backuppull login with its own key (set-up: deploy/README.md section 6).
 - Open C:\SMART-TB-Backups\pull.log. Each run adds a line: OK or FAILED with the reason.
-- Run it by hand to see the error: `powershell -ExecutionPolicy Bypass -File C:\SMART-TB\pull-backups.ps1 -KeyPath C:\SMART-TB\acip-vm-acaiproject_key.pem -Dest C:\SMART-TB-Backups`
-- "could not list backups": SSH is failing. Run the ssh command from section 2. If it hangs, check the public IP. If it asks "continue connecting?", answer yes once.
+- Run it by hand to see the error: `powershell -ExecutionPolicy Bypass -File C:\SMART-TB\pull-backups.ps1 -KeyPath C:\SMART-TB\smarttb_backuppull -Dest C:\SMART-TB-Backups` (it connects as backuppull to 45.195.159.88 by default)
+- "could not list backups": SSH is failing. Check the server is up (section 2) and that the desktop's key is in /home/backuppull/.ssh/authorized_keys. If it asks "continue connecting?", answer yes once.
 - The job only runs while someone is logged in to the desktop and the desktop is on. It catches up later because the server keeps 3 days.
 - Task status: `schtasks /Query /TN "SMART-TB backup pull" /V /FO LIST | findstr /i "Status Last Next"`
 - Delete the job: `schtasks /Delete /TN "SMART-TB backup pull" /F`
@@ -163,7 +175,7 @@ This loads the newest backup into a temporary database, shows what it holds, and
     cd /opt/smarttb/app
     set -a; source /opt/smarttb/.env; set +a
     export SMARTTB_ENV_FILES=/opt/smarttb/.env,/opt/smarttb/.env.mongo
-    F=$(ls -1t /opt/smarttb/backups/smarttb-*.dump.enc | head -1)
+    F=$(ls -1t /opt/smarttb/backups/smarttb-2*.dump.enc | head -1)
     openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:BACKUP_PASSPHRASE -in "$F" | npm run --silent db:restore -- --admin --into restore_test
     npm run --silent db:counts -- --admin --db restore_test
     npm run --silent db:counts
@@ -176,7 +188,7 @@ It should print "Restored ... documents", then two lists of counts that are clos
 This replaces the live database with a backup. Anything entered after that backup is lost and must be re-entered from the paper forms. Write down the time of the backup you use.
 
 1. Pick the backup file (newest good one). If the server's own copies are gone, copy one from the desktop back to the server:
-   `scp -i "<key>" C:\SMART-TB-Backups\<file> azureuser@135.235.138.35:/tmp/` then
+   `scp -i "<key>" C:\SMART-TB-Backups\<file> root@45.195.159.88:/tmp/` then
    `sudo install -o smarttb -g smarttb -m 600 /tmp/<file> /opt/smarttb/backups/ && rm /tmp/<file>`
 2. Stop the app and the backup timer:
 
@@ -204,6 +216,19 @@ This replaces the live database with a backup. Anything entered after that backu
 
 5. Sign in and check recent participants. Keep the copy made in step 3 for a few weeks in case something was missed.
 
+6. Photos: if /opt/smarttb/uploads was lost too, unpack every photo archive into it, oldest first (copy them back from the desktop first if needed, as in step 1):
+
+        sudo bash -c '
+        set -a; source /opt/smarttb/.env; set +a
+        install -d -o smarttb -g smarttb -m 750 /opt/smarttb/uploads
+        for F in $(ls -1 /opt/smarttb/backups/smarttb-images-*.dump.enc); do
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:BACKUP_PASSPHRASE -in "$F" | tar -xz -C /opt/smarttb/uploads
+        done
+        chown -R smarttb:smarttb /opt/smarttb/uploads
+        '
+
+   A photo whose file is missing still shows as attached in Module 5 (its record is in the database) but the picture does not open.
+
 The restore was tried on a test computer: a backup loaded into an empty database and into a second database, every collection had the same number of records, the unique rules (one account per email, one participant ID) came back, and a wrong passphrase wrote nothing. Do the monthly test above on this server once before relying on it.
 
 ### Open a backup by hand (any Linux machine)
@@ -212,6 +237,8 @@ The restore was tried on a test computer: a backup loaded into an empty database
     gunzip -c smarttb.dump.gz | head -c 2000        # shows the first lines; every line is one record as plain JSON text
 
 The file is a compressed list of records, one per line, in plain JSON text. Contact details inside it are still encrypted (they need CONTACT_ENC_KEY).
+
+A photo archive (smarttb-images-XXXX.dump.enc) is a .tar.gz once decrypted: `... -out photos.tar.gz` then `tar -tzf photos.tar.gz` lists it, `tar -xzf photos.tar.gz` unpacks it (one folder per participant).
 
 ## 7. Secrets: what must never be lost
 
@@ -231,7 +258,7 @@ After editing .env: `sudo systemctl restart smarttb`. Keep the format KEY=value,
 Use this if the server is lost. About 1 to 2 hours.
 
 1. Ask IT for a new Ubuntu 24.04 server with ports 22 (from the two IPs), 80 and 443, and a key file.
-2. Copy the deploy folder: `scp -i "<key>" -r "<project>\deploy" azureuser@<new IP>:~/`
+2. Copy the deploy folder: `scp -i "<key>" -r "<project>\deploy" root@<new IP>:~/`
 3. On the server: `sudo bash ~/deploy/server-setup.sh`, then install the database: `sudo bash ~/deploy/mongo-setup.sh`
 4. Put the code on it (section 5), cloning once: `sudo -u smarttb -H git clone -b main /opt/smarttb/code.bundle /opt/smarttb/app`
 5. Create /opt/smarttb/.env. Use the SAME CONTACT_ENC_KEY and BACKUP_PASSPHRASE as before (from the offline copy). Use the layout in deploy/env.production.example. The database passwords are made for you in the next steps; do not reuse old ones.
@@ -242,7 +269,7 @@ Use this if the server is lost. About 1 to 2 hours.
 
 ## 9. Not done yet (do before the first real participant)
 
-- HTTPS: needs a domain name pointing to 135.235.138.35. Then replace /etc/caddy/Caddyfile with deploy/Caddyfile (domain filled in), `sudo systemctl reload caddy`, set COOKIE_SECURE=true in .env, `sudo systemctl restart smarttb`. Until then passwords travel unencrypted.
+- HTTPS: needs a domain name pointing to 45.195.159.88. Then replace /etc/caddy/Caddyfile with deploy/Caddyfile (domain filled in), `sudo systemctl reload caddy`, set COOKIE_SECURE=true in .env, `sudo systemctl restart smarttb`. Until then passwords travel unencrypted.
 - A backup copy that is not on this server or the desktop. Ask IT for separate storage.
 - Two-step sign-in for staff.
 - Create the real administrator accounts. There are no demo accounts on this server.

@@ -9,6 +9,7 @@ import { addHoursToTime, crossesMidnight, isValidTime, nowTime, timeDeviation } 
 import { imagePrefix, isTimepointComplete } from '../../../utils/sampling';
 import type { TimepointDef } from '../../../data/timepoints';
 import type { TimepointEntry } from '../../../types/crf';
+import { PhotoSlot, type PhotoInfo } from './PhotoSlot';
 
 interface TimepointCardProps {
   def: TimepointDef;
@@ -17,6 +18,10 @@ interface TimepointCardProps {
   readOnly: boolean;
   errors: Record<string, string>;
   onChange: (patch: Partial<TimepointEntry>) => void;
+  /** The participant, for attaching photos. */
+  uid: string;
+  photos: { blood?: PhotoInfo; plasma?: PhotoInfo };
+  onPhotoSaved: (photo: PhotoInfo) => void;
 }
 
 type CardState = 'complete' | 'deviation' | 'partial' | 'pending';
@@ -35,7 +40,7 @@ const DOT: Record<CardState, string> = {
   pending: 'border-line-strong bg-white',
 };
 
-export function TimepointCard({ def, entry, t0, readOnly, errors, onChange }: TimepointCardProps) {
+export function TimepointCard({ def, entry, t0, readOnly, errors, onChange, uid, photos, onPhotoSaved }: TimepointCardProps) {
   const prefix = `tp.${def.key}`;
   const cardError = errors[prefix];
   const anyError = Object.keys(errors).some((k) => k === prefix || k.startsWith(`${prefix}.`));
@@ -124,31 +129,37 @@ export function TimepointCard({ def, entry, t0, readOnly, errors, onChange }: Ti
                 {!def.salivaOnly && (
                   <div className="grid gap-3 sm:grid-cols-2">
                     <CheckToggle label="Blood collected" description="1.5–2.0 mL in EDTA" checked={entry.blood} onChange={(v) => onChange({ blood: v })} readOnly={readOnly} />
-                    <InputField
-                      id={`${prefix}-bloodImg`}
-                      label="Blotting-paper blood image ID"
-                      kind="integer"
-                      prefix={imagePrefix('BL', def.hours)}
-                      placeholder="0000"
-                      maxLength={4}
-                      value={entry.bloodImg}
-                      onChange={(v) => onChange({ bloodImg: v })}
-                      readOnly={readOnly}
-                      error={errors[`${prefix}.bloodImg`]}
-                    />
+                    <div>
+                      <InputField
+                        id={`${prefix}-bloodImg`}
+                        label="Blotting-paper blood image ID"
+                        kind="integer"
+                        prefix={imagePrefix('BL', def.hours)}
+                        placeholder="0000"
+                        maxLength={4}
+                        value={entry.bloodImg}
+                        onChange={(v) => onChange({ bloodImg: v })}
+                        readOnly={readOnly}
+                        error={errors[`${prefix}.bloodImg`]}
+                      />
+                      <PhotoSlot uid={uid} timepoint={def.key} kind="blood" imageId={entry.bloodImg} photo={photos.blood} readOnly={readOnly} onSaved={onPhotoSaved} />
+                    </div>
                     <CheckToggle label="Plasma separated" description="Immediately after collection" checked={entry.plasma} onChange={(v) => onChange({ plasma: v })} readOnly={readOnly} />
-                    <InputField
-                      id={`${prefix}-plasmaImg`}
-                      label="Plasma light-box image ID"
-                      kind="integer"
-                      prefix={imagePrefix('PL', def.hours)}
-                      placeholder="0000"
-                      maxLength={4}
-                      value={entry.plasmaImg}
-                      onChange={(v) => onChange({ plasmaImg: v })}
-                      readOnly={readOnly}
-                      error={errors[`${prefix}.plasmaImg`]}
-                    />
+                    <div>
+                      <InputField
+                        id={`${prefix}-plasmaImg`}
+                        label="Plasma light-box image ID"
+                        kind="integer"
+                        prefix={imagePrefix('PL', def.hours)}
+                        placeholder="0000"
+                        maxLength={4}
+                        value={entry.plasmaImg}
+                        onChange={(v) => onChange({ plasmaImg: v })}
+                        readOnly={readOnly}
+                        error={errors[`${prefix}.plasmaImg`]}
+                      />
+                      <PhotoSlot uid={uid} timepoint={def.key} kind="plasma" imageId={entry.plasmaImg} photo={photos.plasma} readOnly={readOnly} onSaved={onPhotoSaved} />
+                    </div>
                     <CheckToggle
                       label="Rifampicin stabilizer added"
                       description="Ascorbic acid / phosphate buffer"

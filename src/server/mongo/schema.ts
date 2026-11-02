@@ -107,6 +107,13 @@ export const SPECS: CollectionSpec[] = [
     ],
   },
   { name: 'participant_contacts', privileges: RW, audit: { keyFields: ['_id'], noise: ['updated_at', 'updated_by'] } },
+  // Module 5 photos (the picture files are on disk; see src/server/images.ts). Never removed: a replaced photo is kept.
+  {
+    name: 'crf_images',
+    privileges: RW,
+    audit: { keyFields: ['_id'] },
+    indexes: [{ key: { participant_uid: 1, timepoint: 1, kind: 1 }, options: { name: 'by_slot' } }],
+  },
   // Append-only: may be added to and read, never changed or removed.
   {
     name: 'module_edit_reasons',

@@ -73,6 +73,14 @@ export async function openStore() {
     },
     /** The `data` stored for one module (contacts are not in it). */
     moduleData: async (uid, moduleId) => (await col('crf_modules').findOne({ _id: `${uid}:${moduleId}` }))?.data,
+    /** Marks modules as completed without filling them in, to reach a later module quickly. */
+    completeModules: (uid, ids) =>
+      col('crf_modules').updateMany(
+        { _id: { $in: ids.map((id) => `${uid}:${id}`) } },
+        { $set: { completed: true, completed_by_name: 'Test', completed_role: 'Test', completed_at: new Date(), editing: false } },
+      ),
+    /** Every photo record of a participant, replaced ones included, oldest first. */
+    photos: (uid) => col('crf_images').find({ participant_uid: uid }).sort({ uploaded_at: 1 }).toArray(),
     close: () => client.close(),
   };
 }

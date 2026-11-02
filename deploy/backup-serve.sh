@@ -11,7 +11,7 @@ CMD="${CMD#sudo }" # the pull script was written for a server where it used sudo
 
 if [[ "$CMD" == "find $DIR -maxdepth 1 -name smarttb-\\*.dump.enc -exec stat -c %n,%s {} +" ]]; then
   exec find "$DIR" -maxdepth 1 -name 'smarttb-*.dump.enc' -exec stat -c %n,%s {} +
-elif [[ "$CMD" =~ ^cat\ (/opt/smarttb/backups/smarttb-[0-9]{8}T[0-9]{6}Z\.dump\.enc)$ ]]; then
+elif [[ "$CMD" =~ ^cat\ (/opt/smarttb/backups/smarttb-(images-)?[0-9]{8}T[0-9]{6}Z\.dump\.enc)$ ]]; then
   exec cat "${BASH_REMATCH[1]}"
 else
   echo "Not allowed: this key can only list and download the SMART-TB backup files." >&2

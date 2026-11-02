@@ -3,12 +3,12 @@
 #
 #   powershell -ExecutionPolicy Bypass -File pull-backups.ps1 -KeyPath D:\ServerKey\key.pem -Dest D:\SMART-TB-Backups
 #
-# This computer's public IP must be allowed for SSH on the server. Files older than -KeepDays are deleted here.
+# Uses the restricted backuppull login (deploy/README.md section 6), which can only list and download. Files older than -KeepDays are deleted here.
 param(
   [Parameter(Mandatory)] [string] $KeyPath,
   [Parameter(Mandatory)] [string] $Dest,
-  [string] $Server = '135.235.138.35',
-  [string] $User = 'azureuser',
+  [string] $Server = '45.195.159.88',
+  [string] $User = 'backuppull',
   [string] $RemoteDir = '/opt/smarttb/backups',
   [int] $KeepDays = 30
 )
@@ -42,8 +42,9 @@ try {
     $fetched++
   }
 
-  Get-ChildItem $Dest -Filter 'smarttb-*.dump.enc' | Where-Object LastWriteTime -lt (Get-Date).AddDays(-$KeepDays) | Remove-Item -Force
-  $newest = (Get-ChildItem $Dest -Filter 'smarttb-*.dump.enc' | Sort-Object Name | Select-Object -Last 1).Name
+  # Photo archives (smarttb-images-*) are never removed: each holds only the photos added in its hour.
+  Get-ChildItem $Dest -Filter 'smarttb-2*.dump.enc' | Where-Object LastWriteTime -lt (Get-Date).AddDays(-$KeepDays) | Remove-Item -Force
+  $newest = (Get-ChildItem $Dest -Filter 'smarttb-2*.dump.enc' | Sort-Object Name | Select-Object -Last 1).Name
   Log "OK: $fetched new file(s); newest: $newest"
 } catch {
   Log "FAILED: $($_.Exception.Message)"

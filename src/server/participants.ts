@@ -257,6 +257,14 @@ function assertEditable(p: Participant, user: ActingUser, id: ModuleId) {
   }
 }
 
+/** Locks the participant and checks the user may fill in the module now (the same rule as editing its fields). */
+export async function assertModuleEditable(tx: Tx, user: ActingUser, uid: string, id: ModuleId): Promise<Participant> {
+  const p = await loadForUpdate(tx, uid);
+  assertEditable(p, user, id);
+  await touch(tx, uid);
+  return p;
+}
+
 async function touch(tx: Tx, uid: string) {
   await tx.updateOne('participants', { _id: uid as never }, { $set: { updated_at: new Date() } });
 }

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { SectionCard } from '../ui/SectionCard';
 import { InputField } from '../ui/InputField';
 import { ChoiceField } from '../ui/ChoiceField';
@@ -7,6 +7,8 @@ import { Alert } from '../ui/Alert';
 import { Button } from '../ui/Button';
 import { SignOffFields } from '../ui/SignOffFields';
 import { TimepointCard } from './sampling/TimepointCard';
+import type { PhotoInfo } from './sampling/PhotoSlot';
+import { api } from '../../utils/api';
 import { MEALS, TIMEPOINTS } from '../../data/timepoints';
 import { YES_NO } from '../../data/options';
 import { fastingHours, fmt } from '../../utils/clinical';
@@ -22,6 +24,22 @@ export function Module5PkSampling({ participant, data, update, readOnly, errors 
   const dayWarning = day !== null && (day < 8 || day > 10) ? `Day ${day} — outside the Day 8–10 sampling window` : undefined;
   const counters = sampleCounters(data);
 
+  // Attached photos, kept apart from the form data (the files are stored on the server, not in the record).
+  const [photos, setPhotos] = useState<PhotoInfo[]>([]);
+  const loadPhotos = useCallback(async () => {
+    try {
+      setPhotos((await api<{ photos: PhotoInfo[] }>(`/api/participants/${encodeURIComponent(participant.uid)}/images`)).photos);
+    } catch {
+      /* the form still works without the photo list */
+    }
+  }, [participant.uid]);
+  useEffect(() => {
+    void loadPhotos();
+  }, [loadPhotos]);
+  const photoFor = (tp: string, kind: PhotoInfo['kind']) => photos.find((p) => p.timepoint === tp && p.kind === kind);
+  const onPhotoSaved = (photo: PhotoInfo) =>
+    setPhotos((cur) => [...cur.filter((p) => !(p.timepoint === photo.timepoint && p.kind === photo.kind)), photo]);
+
   const updateTp = (key: string, patch: Partial<TimepointEntry>) =>
     update({ timepoints: { ...data.timepoints, [key]: { ...data.timepoints[key], ...patch } } });
 
@@ -29,6 +47,7 @@ export function Module5PkSampling({ participant, data, update, readOnly, errors 
     { label: 'Blood', value: counters.blood, total: counters.bloodTotal },
     { label: 'Saliva', value: counters.saliva, total: counters.salivaTotal },
     { label: 'Images', value: counters.images, total: counters.imagesTotal },
+    { label: 'Photos', value: photos.length, total: counters.imagesTotal },
   ];
 
   return (
@@ -147,11 +166,11 @@ export function Module5PkSampling({ participant, data, update, readOnly, errors 
             </p>
           </div>
         </div>
-        <div className="mb-4 grid grid-cols-3 divide-x divide-line rounded-2xl border border-line bg-white" aria-live="polite">
+        <div className="mb-4 grid grid-cols-4 divide-x divide-line rounded-2xl border border-line bg-white" aria-live="polite">
           {counterItems.map((c) => {
             const done = c.value === c.total;
             return (
-              <div key={c.label} className="px-3 py-2.5 text-center">
+              <div key={c.label} className="px-2 py-2.5 text-center">
                 <p className="text-xs font-medium text-ink-muted">{c.label}</p>
                 <p className={`text-lg font-semibold tabular-nums ${done ? 'text-ok-700' : 'text-ink'}`}>
                   {c.value}
@@ -176,6 +195,9 @@ export function Module5PkSampling({ participant, data, update, readOnly, errors 
               readOnly={readOnly}
               errors={errors}
               onChange={(patch) => updateTp(tp.key, patch)}
+              uid={participant.uid}
+              photos={{ blood: photoFor(tp.key, 'blood'), plasma: photoFor(tp.key, 'plasma') }}
+              onPhotoSaved={onPhotoSaved}
             />
           ))}
         </ol>
