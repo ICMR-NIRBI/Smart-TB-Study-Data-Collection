@@ -17,7 +17,10 @@ import { IMAGE_ID_PATTERN } from '../utils/sampling';
 
 export const PHOTO_KINDS = ['blood', 'plasma'] as const;
 export type PhotoKind = (typeof PHOTO_KINDS)[number];
-export const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+/** The camera file is kept exactly as taken (the protocol asks for 5–7 MP JPEGs), so the limit leaves room for those. */
+export const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
+export const MAX_PHOTO_LABEL = '20 MB';
+const THUMB_SIDE = 320;
 
 export interface PhotoInfo {
   id: string;
@@ -91,9 +94,9 @@ export async function savePhoto(
   const imageId = typeof input.imageId === 'string' ? input.imageId : '';
   if (!IMAGE_ID_PATTERN.test(imageId)) throw new ApiError(400, 'Enter the 4-digit image ID before adding the photo');
   if (!input.bytes.length) throw new ApiError(400, 'The photo is empty');
-  if (input.bytes.length > MAX_PHOTO_BYTES) throw new ApiError(413, 'The photo is too large (8 MB at most)');
+  if (input.bytes.length > MAX_PHOTO_BYTES) throw new ApiError(413, `The photo is too large (${MAX_PHOTO_LABEL} at most)`);
   const type = detectType(input.bytes);
-  if (!type) throw new ApiError(400, 'This is not a JPEG, PNG or WebP picture');
+  if (!type) throw new ApiError(400, 'This is not a JPEG, PNG or WebP picture. On an iPhone, set Settings › Camera › Formats to Most Compatible.');
 
   await assertModuleEditable(tx, user, uid, 5);
 
@@ -130,14 +133,44 @@ export async function savePhoto(
   return toInfo(doc);
 }
 
-/** A stored photo's bytes, for showing it to someone signed in. */
-export async function readPhoto(q: Reads, id: string): Promise<{ bytes: Buffer; mime: string; name: string }> {
+/**
+ * A stored photo's bytes, for showing it to someone signed in: the original exactly as uploaded, or (`thumb`) a small
+ * preview for the Module 5 list, so a phone does not download every full-size photo. The preview is made the first
+ * time it is asked for and kept next to the original (`<sha256>.thumb.jpg`); if it cannot be made, the original is sent.
+ */
+export async function readPhoto(q: Reads, id: string, opts: { thumb?: boolean } = {}): Promise<{ bytes: Buffer; mime: string; name: string }> {
   const doc = await q.findOne<ImageDoc>('crf_images', { _id: id as never });
   if (!doc) throw new ApiError(404, 'Photo not found');
+  const name = `${doc.participant_uid}-${doc.timepoint}h-${doc.kind}-${doc.image_id || 'noid'}`;
+  let bytes: Buffer;
   try {
-    const bytes = await readFile(join(uploadDir(), doc.file));
-    return { bytes, mime: doc.mime, name: `${doc.participant_uid}-${doc.timepoint}h-${doc.kind}.${doc.file.split('.').pop()}` };
+    bytes = await readFile(join(uploadDir(), doc.file));
   } catch {
     throw new ApiError(404, 'The photo file is missing on the server. Restore it from the photo backups.');
+  }
+  if (opts.thumb) {
+    const thumb = await previewOf(doc, bytes);
+    if (thumb) return { bytes: thumb, mime: 'image/jpeg', name: `${name}-preview.jpg` };
+  }
+  return { bytes, mime: doc.mime, name: `${name}.${doc.file.split('.').pop()}` };
+}
+
+async function previewOf(doc: ImageDoc, original: Buffer): Promise<Buffer | null> {
+  const path = join(uploadDir(), `${doc.file.replace(/\.[a-z]+$/, '')}.thumb.jpg`);
+  try {
+    return await readFile(path);
+  } catch {
+    /* not made yet */
+  }
+  try {
+    const sharp = (await import('sharp')).default;
+    // rotate() turns the picture upright from the camera's orientation tag; the preview keeps no camera details.
+    const thumb = await sharp(original).rotate().resize(THUMB_SIDE, THUMB_SIDE, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 80 }).toBuffer();
+    const tmp = `${path}.${randomUUID()}.tmp`;
+    await writeFile(tmp, thumb, { mode: 0o640 });
+    await rename(tmp, path);
+    return thumb;
+  } catch {
+    return null;
   }
 }

@@ -5,13 +5,16 @@ import { errorResponse } from '../../../../server/http';
 import { readPhoto } from '../../../../server/images';
 import { reader } from '../../../../server/mongo/tx';
 
-/** A stored Module 5 photo, for anyone signed in. Never cached by the browser or anything in between. */
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+/**
+ * A stored Module 5 photo, for anyone signed in: the original as taken, or `?size=thumb` for a small preview.
+ * Never cached by the browser or anything in between.
+ */
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getSessionUser();
     if (!user) throw new ApiError(401, 'Your session has ended. Please log in again.');
     const { id } = await params;
-    const photo = await readPhoto(reader, id);
+    const photo = await readPhoto(reader, id, { thumb: new URL(req.url).searchParams.get('size') === 'thumb' });
     return new NextResponse(new Uint8Array(photo.bytes), {
       headers: {
         'Content-Type': photo.mime,

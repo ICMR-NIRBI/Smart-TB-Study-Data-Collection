@@ -26,29 +26,10 @@ interface PhotoSlotProps {
   onSaved: (photo: PhotoInfo) => void;
 }
 
-const MAX_SIDE = 2048;
+/** The server's limit (src/server/images.ts). Photos are sent exactly as the camera took them, never resized. */
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
-/**
- * Makes a phone photo small enough to upload quickly (longest side 2048 px, JPEG). Drawing it again also leaves out
- * the hidden details a camera adds, such as the location. Falls back to the original if the browser cannot read it.
- */
-async function shrink(file: File): Promise<Blob> {
-  try {
-    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
-    const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(bitmap.width * scale);
-    canvas.height = Math.round(bitmap.height * scale);
-    canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    bitmap.close();
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
-    return blob ?? file;
-  } catch {
-    return file;
-  }
-}
-
-type Stage = 'preparing' | 'uploading' | 'saving';
+type Stage = 'uploading' | 'saving';
 
 /**
  * Sends the form and reports how much has gone up. fetch cannot report upload progress, so this uses XMLHttpRequest.
@@ -83,7 +64,7 @@ export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSa
   const camera = useRef<HTMLInputElement>(null);
   const file = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
-  const [stage, setStage] = useState<Stage>('preparing');
+  const [stage, setStage] = useState<Stage>('uploading');
   const [sent, setSent] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const what = kind === 'blood' ? 'blotting-paper blood photo' : 'plasma light-box photo';
@@ -93,15 +74,16 @@ export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSa
   const upload = async (picked: File) => {
     setBusy(true);
     setError(null);
-    setStage('preparing');
+    setStage('uploading');
     setSent(0);
     try {
+      if (picked.size > MAX_UPLOAD_BYTES) throw new Error('The photo is too large (20 MB at most)');
       const form = new FormData();
-      form.append('file', await shrink(picked), 'photo.jpg');
+      // The original camera file, byte for byte (the protocol asks for full-resolution JPEGs).
+      form.append('file', picked, picked.name || 'photo.jpg');
       form.append('timepoint', timepoint);
       form.append('kind', kind);
       form.append('imageId', imageId);
-      setStage('uploading');
       const res = await postWithProgress(`/api/participants/${encodeURIComponent(uid)}/images`, form, (fraction) => {
         setSent(fraction);
         if (fraction >= 1) setStage('saving');
@@ -137,7 +119,7 @@ export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSa
             aria-label={`Open the ${what} full size`}
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- a private, signed-in image; not for the image optimiser */}
-            <img src={`/api/images/${photo.id}`} alt={`${what}, ${timepoint} h`} className="h-full w-full object-cover" />
+            <img src={`/api/images/${photo.id}?size=thumb`} alt={`${what}, ${timepoint} h`} className="h-full w-full object-cover" />
           </a>
         ) : null}
         <div className="min-w-0 flex-1 text-xs text-ink-muted">
@@ -197,12 +179,12 @@ export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSa
   );
 }
 
-const STAGE_LABEL: Record<Stage, string> = { preparing: 'Preparing photo…', uploading: 'Uploading…', saving: 'Saving…' };
+const STAGE_LABEL: Record<Stage, string> = { uploading: 'Uploading…', saving: 'Saving…' };
 
-/** The bar under a photo while it goes up: preparing (shrinking on the phone), the share sent, then saving on the server. */
+/** The bar under a photo while it goes up: the share sent, then saving on the server. */
 function UploadProgress({ stage, fraction, what }: { stage: Stage; fraction: number; what: string }) {
-  const percent = stage === 'uploading' ? Math.round(fraction * 100) : stage === 'saving' ? 100 : 0;
-  const waiting = stage !== 'uploading';
+  const percent = stage === 'uploading' ? Math.round(fraction * 100) : 100;
+  const waiting = stage === 'saving';
   return (
     <div className="space-y-1" aria-live="polite">
       <div className="flex items-center justify-between text-xs">
@@ -220,7 +202,7 @@ function UploadProgress({ stage, fraction, what }: { stage: Stage; fraction: num
       >
         <div
           className={`h-full rounded-full bg-brand-600 transition-[width] duration-200 ease-out ${waiting ? 'animate-pulse' : ''}`}
-          style={{ width: `${stage === 'preparing' ? 8 : percent}%` }}
+          style={{ width: `${Math.max(percent, 4)}%` }}
         />
       </div>
     </div>

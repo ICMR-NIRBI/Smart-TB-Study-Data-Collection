@@ -3,7 +3,10 @@
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { openStore } from './lib/store.mjs';
+
+const sharp = createRequire(import.meta.url)('sharp');
 
 const BASE = process.env.BASE ?? 'http://localhost:3100';
 const stamp = Date.now() % 1000000;
@@ -77,8 +80,8 @@ r = await upload(pk, uid);
 check('a PK scientist cannot attach Module 5 photos', r.status === 403, `${r.status} ${JSON.stringify(r.json)}`);
 r = await upload(ph, uid, { bytes: Buffer.from('%PDF-1.4 not a picture'), type: 'image/jpeg' });
 check('a file that is not a picture is refused, whatever its name says', r.status === 400 && /JPEG/.test(r.json.error ?? ''), `${r.status} ${JSON.stringify(r.json)}`);
-r = await upload(ph, uid, { bytes: Buffer.concat([jpeg, Buffer.alloc(8 * 1024 * 1024)]) });
-check('a photo over 8 MB is refused', r.status === 413, `${r.status}`);
+r = await upload(ph, uid, { bytes: Buffer.concat([jpeg, Buffer.alloc(20 * 1024 * 1024)]) });
+check('a photo over 20 MB is refused', r.status === 413, `${r.status}`);
 r = await upload(ph, uid, { timepoint: '5' });
 check('the saliva-only timepoint takes no photo', r.status === 400, `${r.status}`);
 r = await upload(ph, uid, { timepoint: '99' });
@@ -104,6 +107,9 @@ check('and the 0 h plasma photo (PNG)', r.status === 200 && r.json.photo?.kind =
 
 r = await pk(`/api/participants/${uid}/images`);
 check('any signed-in role sees the list', r.status === 200 && r.json.photos?.length === 2, `${r.status} ${JSON.stringify(r.json).slice(0, 200)}`);
+r = await pk(`/api/images/${first.id}`);
+r = await pk(`/api/images/${first.id}?size=thumb`);
+check('a preview that cannot be made falls back to the original', r.status === 200 && r.bytes?.equals(jpeg), `${r.status}`);
 r = await pk(`/api/images/${first.id}`);
 check('and can open the picture, exactly as uploaded', r.status === 200 && r.headers.get('content-type') === 'image/jpeg' && r.bytes?.equals(jpeg), `${r.status} ${r.headers.get('content-type')}`);
 check('it is not cached and not guessed as another type', /no-store/.test(r.headers.get('cache-control') ?? '') && r.headers.get('x-content-type-options') === 'nosniff');
@@ -148,6 +154,24 @@ current = (await ph(`/api/participants/${uid}/images`)).json.photos;
 check('an unfinished ID on the form leaves the photo without one (never a wrong one)', current.find((p) => p.kind === 'blood')?.imageId === '', JSON.stringify(current));
 await setIds({ 0: { bloodImg: '0777' } });
 
+// --- a real camera-sized photo (6 MP JPEG) is kept exactly as taken; the list shows a small preview
+const camera = await sharp({ create: { width: 3000, height: 2000, channels: 3, background: '#7a1f2b' } })
+  .composite([{ input: Buffer.from('<svg width="3000" height="2000"><circle cx="1500" cy="1000" r="700" fill="#e8c9b0"/></svg>') }])
+  .jpeg({ quality: 95 })
+  .toBuffer();
+r = await upload(ph, uid, { timepoint: '1', kind: 'blood', imageId: '0201', bytes: camera });
+const big = r.json.photo;
+check('a 6 MP camera photo is accepted', r.status === 200 && big?.bytes === camera.length, `${r.status} ${JSON.stringify(r.json).slice(0, 120)}`);
+r = await pk(`/api/images/${big.id}`);
+check('the stored photo is byte-for-byte the camera file (no resizing or re-compression)', r.status === 200 && r.bytes?.equals(camera), `${r.status} ${r.bytes?.length} vs ${camera.length}`);
+const meta = await sharp(r.bytes).metadata();
+check('at full resolution', meta.width === 3000 && meta.height === 2000, `${meta.width}x${meta.height}`);
+r = await pk(`/api/images/${big.id}?size=thumb`);
+const tmeta = r.bytes ? await sharp(r.bytes).metadata() : {};
+check('the list gets a small JPEG preview instead', r.status === 200 && r.headers.get('content-type') === 'image/jpeg' && Math.max(tmeta.width, tmeta.height) === 320 && r.bytes.length < camera.length / 5, `${r.status} ${tmeta.width}x${tmeta.height} ${r.bytes?.length}`);
+const bigDoc = (await db.photos(uid)).find((p) => p._id === big.id);
+check('the preview is kept next to the original', existsSync(join(uploads, bigDoc.file.replace(/\.[a-z]+$/, '.thumb.jpg'))));
+
 // --- audit trail
 const auditNew = await db.audit('crf_images', second.id);
 check('the upload is in the audit trail with its reason', auditNew.some((a) => a.action === 'INSERT' && a.reason === 'Module 5 photo attached'), JSON.stringify(auditNew));
@@ -159,7 +183,7 @@ await db.completeModules(uid, [5]);
 r = await upload(ph, uid, { timepoint: '1' });
 check('no new photos once Module 5 is locked', r.status === 409, `${r.status} ${JSON.stringify(r.json)}`);
 r = await pk(`/api/participants/${uid}/images`);
-check('but they can still be seen', r.status === 200 && r.json.photos?.length === 2, `${r.status}`);
+check('but they can still be seen', r.status === 200 && r.json.photos?.length === 3, `${r.status}`);
 
 await db.close();
 console.log(`\n${pass} passed, ${fail} failed`);
