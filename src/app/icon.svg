@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>SMART-TB Concept 01 v2</title>
+  <rect id="background" x="0" y="0" width="1024" height="1024" rx="235" ry="235" fill="#0F6F7B"/>
+  <path id="pk-curve" d="M 275.00 749.00 C 308.00 575.00 345.00 285.00 420.00 285.00 C 465.00 285.00 535.00 560.00 660.00 612.00 C 700.00 629.00 741.00 640.00 782.00 646.00" fill="none" stroke="#FFFFFF" stroke-width="93" stroke-linecap="round" stroke-linejoin="round"/>
+  <g id="marker-1">
+    <circle cx="275.00" cy="749.00" r="80" fill="#FFFFFF"/>
+    <circle cx="275.00" cy="749.00" r="42" fill="#2EE88A"/>
+  </g>
+  <g id="marker-2">
+    <circle cx="420.00" cy="285.00" r="90" fill="#FFFFFF"/>
+    <circle cx="420.00" cy="285.00" r="50" fill="#2EE88A"/>
+  </g>
+  <g id="marker-3">
+    <circle cx="660.00" cy="612.00" r="80" fill="#FFFFFF"/>
+    <circle cx="660.00" cy="612.00" r="42" fill="#2EE88A"/>
+  </g>
+</svg>
