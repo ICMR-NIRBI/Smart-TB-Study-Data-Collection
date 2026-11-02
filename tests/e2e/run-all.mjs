@@ -46,7 +46,7 @@ if (!external) {
   const nextBin = createRequire(join(root, 'package.json')).resolve('next/dist/bin/next');
   server = spawn(process.execPath, ['--require', './scripts/exfat-readlink-fix.cjs', nextBin, 'dev', '-p', '3100'], {
     cwd: root,
-    env: { ...process.env, ...dbEnv, NEXT_PUBLIC_CRF_PREVIEW: 'false' },
+    env: { ...process.env, ...dbEnv, NEXT_PUBLIC_CRF_PREVIEW: 'false', SYSTEM_ADMIN_EMAILS: process.env.SYSTEM_ADMIN_EMAILS ?? 'sysadmin-e2e@smarttb.study' },
     stdio: 'ignore',
   });
 }

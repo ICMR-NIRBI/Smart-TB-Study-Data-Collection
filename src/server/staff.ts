@@ -396,12 +396,12 @@ export async function resetStaffPassword(tx: Tx, admin: AdminActor, id: string):
  * Gives an account a starting password that must be changed at the first sign-in. Any unused setup link is cancelled,
  * the person is signed out everywhere, and failed-attempt counts are cleared. Shared by the admin screen and the command line.
  */
-export async function applyTemporaryPassword(tx: Tx, userId: string, password: string, updatedBy: string | null): Promise<void> {
+export async function applyTemporaryPassword(tx: Tx, userId: string, password: string, updatedBy: string | null, mustChange = true): Promise<void> {
   const user = await tx.findOne<UserDoc>('app_users', { _id: userId as never, active: true });
   if (!user) throw new ApiError(404, 'Active staff account not found');
   const problem = passwordProblem(password, user.email);
   if (problem) throw new ApiError(400, problem);
-  await tx.updateOne('app_users', { _id: userId as never }, { $set: { password_hash: await hashPassword(password), must_change_password: true, updated_at: new Date(), updated_by: updatedBy } });
+  await tx.updateOne('app_users', { _id: userId as never }, { $set: { password_hash: await hashPassword(password), must_change_password: mustChange, updated_at: new Date(), updated_by: updatedBy } });
   await cancelSetupLinks(tx, userId);
   await tx.deleteMany('sessions', { user_id: userId });
   await tx.deleteMany('login_attempts', { _id: user.email as never });

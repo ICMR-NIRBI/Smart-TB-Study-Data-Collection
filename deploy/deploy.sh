@@ -30,6 +30,8 @@ as_app "npm run build"
 
 echo "==> Applying database changes (collections and indexes)"
 if [[ -s $MONGO_ENV ]]; then
+  # The app login's rights follow the schema (a new collection needs them); needs the administrator address.
+  if grep -q '^MONGO_ADMIN_URI=' "$MONGO_ENV"; then as_app "npm run --silent db:sync-role -- --env $MONGO_ENV"; fi
   as_app "npm run db:migrate"
 else
   echo "MongoDB logins are not set up yet ($MONGO_ENV is missing): run deploy/mongo-setup.sh and deploy/mongo-init.sh, then deploy again."

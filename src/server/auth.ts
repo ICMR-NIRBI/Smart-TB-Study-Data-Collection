@@ -6,6 +6,7 @@ import { reader, withTransaction } from './mongo/tx';
 import { LOGIN_LOCKOUT_MS, MAX_LOGIN_ATTEMPTS, passwordProblem } from '../utils/accountRules';
 import { roleLabel, type Actor } from '../data/roles';
 import { customRoleLabels, roleAccess } from './roles';
+import { isSystemAdmin, logEvent } from './system';
 import type { ModuleId } from '../types/crf';
 
 /*
@@ -27,6 +28,8 @@ export interface SessionUser extends Actor {
   roleLabel: string;
   /** Signed in with a temporary password: the only thing allowed is choosing a new one. */
   mustChangePassword: boolean;
+  /** Named in SYSTEM_ADMIN_EMAILS on the server: may use the system control page. */
+  isSystemAdmin: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -82,6 +85,7 @@ async function toSessionUser(row: UserDoc): Promise<SessionUser> {
     isAdmin: row.is_admin,
     delegations: await loadDelegations(row._id),
     mustChangePassword: row.must_change_password === true,
+    isSystemAdmin: isSystemAdmin(row.email),
   };
 }
 
@@ -111,9 +115,12 @@ export async function signIn(emailRaw: string, password: string): Promise<SignIn
 
   const attempt = await reader.findOne<AttemptDoc>('login_attempts', { _id: email as never });
   const lockedUntil = attempt?.locked_until?.getTime() ?? 0;
+  const h = await headers();
+  const from = { email, ip: h.get('x-forwarded-for')?.split(',')[0]?.trim() || null, userAgent: h.get('user-agent')?.slice(0, 200) ?? null };
   if (lockedUntil > Date.now()) {
     const ms = lockedUntil - Date.now();
     const mins = Math.ceil(ms / 60000);
+    await logEvent('SIGN_IN_FAILED', { ...from, reason: 'locked after too many failed attempts' });
     return { ok: false, locked: true, lockedForMs: ms, error: `Too many failed attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.` };
   }
 
@@ -121,6 +128,7 @@ export async function signIn(emailRaw: string, password: string): Promise<SignIn
   const valid = await verifyPassword(password, row?.password_hash ?? null);
 
   if (!row || !row.active || !valid) {
+    await logEvent('SIGN_IN_FAILED', { ...from, reason: !row ? 'no account with this email' : !row.active ? 'account is deactivated' : 'wrong password' });
     const { locked, left } = await recordFailure(email);
     if (locked) return { ok: false, locked: true, lockedForMs: LOCKOUT_MS, error: 'Too many failed attempts. Sign-in is locked for 5 minutes.' };
     return { ok: false, error: `Incorrect email or password. ${left} attempt${left === 1 ? '' : 's'} remaining.` };

@@ -25,7 +25,8 @@
     "db:counts": "node --import tsx scripts/mongo/counts.mts",
     "db:drop-scratch": "node --import tsx scripts/mongo/drop-scratch.mts",
     "db:move": "node --import tsx scripts/mongo/move-from-postgres.mts",
-    "db:check-moved": "node --import tsx scripts/mongo/check-moved.mts"
+    "db:check-moved": "node --import tsx scripts/mongo/check-moved.mts",
+    "db:sync-role": "node --import tsx scripts/mongo/setup-auth.mts --sync-role"
   },
   "dependencies": {
     "bson": "^7.3.3",

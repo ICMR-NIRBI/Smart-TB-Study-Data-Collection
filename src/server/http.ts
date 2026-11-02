@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSessionUser, isSameOrigin, type SessionUser } from './auth';
 import { ApiError } from './participants';
+import { describeError, logEvent } from './system';
 import type { ModuleId } from '../types/crf';
 
 /** Runs an API handler for a signed-in user and turns errors into JSON responses. */
@@ -27,6 +28,7 @@ export function errorResponse(err: unknown): NextResponse {
     return NextResponse.json({ error: err.message, details: err.details }, { status: err.status });
   }
   console.error('[api]', err);
+  void logEvent('SERVER_ERROR', { reason: describeError(err) });
   return NextResponse.json({ error: 'Something went wrong on the server. Please try again.' }, { status: 500 });
 }
 

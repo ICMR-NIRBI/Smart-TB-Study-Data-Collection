@@ -201,6 +201,7 @@ export function DashboardView() {
         user={user}
         email={session?.email ?? ''}
         isAdmin={Boolean(session?.actor.isAdmin)}
+        isSystemAdmin={Boolean(session?.isSystemAdmin)}
         idleMinutes={IDLE_TIMEOUT_MIN}
         onClose={() => setUserOpen(false)}
         onSignOut={() => {

@@ -1,6 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import { ChevronRightIcon, LogOutIcon, ShieldCheckIcon, UsersIcon } from 'lucide-react';
+import { ChevronRightIcon, LogOutIcon, ServerCogIcon, ShieldCheckIcon, UsersIcon } from 'lucide-react';
 import { Sheet } from '../ui/Sheet';
 import { Button } from '../ui/Button';
 import type { StaffUser } from '../../types/crf';
@@ -10,12 +10,14 @@ interface UserSheetProps {
   user: StaffUser;
   email: string;
   isAdmin: boolean;
+  /** Named as system administrator on the server: offers the System control page. */
+  isSystemAdmin: boolean;
   idleMinutes: number;
   onClose: () => void;
   onSignOut: () => void;
 }
 
-export function UserSheet({ open, user, email, isAdmin, idleMinutes, onClose, onSignOut }: UserSheetProps) {
+export function UserSheet({ open, user, email, isAdmin, isSystemAdmin, idleMinutes, onClose, onSignOut }: UserSheetProps) {
   return (
     <Sheet
       open={open}
@@ -49,6 +51,16 @@ export function UserSheet({ open, user, email, isAdmin, idleMinutes, onClose, on
           >
             <UsersIcon className="h-5 w-5 text-brand-600" aria-hidden="true" />
             <span className="flex-1">Manage staff accounts</span>
+            <ChevronRightIcon className="h-4 w-4 text-ink-muted" aria-hidden="true" />
+          </Link>
+        )}
+        {isSystemAdmin && (
+          <Link
+            href="/system"
+            className="flex min-h-[52px] items-center gap-3 rounded-2xl border border-line px-4 text-sm font-semibold text-ink transition-colors duration-150 hover:bg-canvas focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+          >
+            <ServerCogIcon className="h-5 w-5 text-brand-600" aria-hidden="true" />
+            <span className="flex-1">System control</span>
             <ChevronRightIcon className="h-4 w-4 text-ink-muted" aria-hidden="true" />
           </Link>
         )}

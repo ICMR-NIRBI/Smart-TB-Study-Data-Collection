@@ -38,6 +38,7 @@ const RW: Privilege[] = ['find', 'insert', 'update'];
 
 export const AUDIT_COLLECTION = 'audit_log';
 export const LOCKS_COLLECTION = 'locks';
+export const SYSTEM_LOG_COLLECTION = 'system_log';
 /** Named locks the app takes with tx.lock(). Created by the set-up script so no one ever has to create one in a transaction. */
 export const LOCK_NAMES = ['admins'] as const;
 
@@ -118,6 +119,16 @@ export const SPECS: CollectionSpec[] = [
     indexes: [{ key: { table_name: 1, row_key: 1, at: 1 }, options: { name: 'by_row' } }],
   },
   { name: LOCKS_COLLECTION, privileges: RW },
+  // Failed sign-ins and server errors, for the system control page. The app may only add and read; MongoDB removes
+  // entries after a year by itself.
+  {
+    name: SYSTEM_LOG_COLLECTION,
+    privileges: ['find', 'insert'],
+    indexes: [
+      { key: { at: 1 }, options: { name: 'expire_after_a_year', expireAfterSeconds: 365 * 24 * 3600 } },
+      { key: { kind: 1, at: -1 }, options: { name: 'by_kind' } },
+    ],
+  },
 ];
 
 export const ALL_COLLECTIONS: readonly string[] = SPECS.map((s) => s.name);

@@ -25,6 +25,8 @@ export interface Session {
   actor: Actor;
   /** Signed in with a temporary password: only choosing a new one is allowed. */
   mustChangePassword: boolean;
+  /** May use the system control page (set on the server, SYSTEM_ADMIN_EMAILS). */
+  isSystemAdmin: boolean;
 }
 
 export type SignInResult = { ok: true } | { ok: false; error: string; locked?: boolean };
@@ -56,6 +58,7 @@ interface ServerUser {
   delegations: ModuleId[];
   entryModules: ModuleId[];
   mustChangePassword: boolean;
+  isSystemAdmin?: boolean;
 }
 
 function toSession(u: ServerUser): Session {
@@ -64,6 +67,7 @@ function toSession(u: ServerUser): Session {
     user: { name: u.name, role: u.roleLabel },
     actor: { role: u.role, entryModules: u.entryModules, isAdmin: u.isAdmin, delegations: u.delegations },
     mustChangePassword: u.mustChangePassword,
+    isSystemAdmin: u.isSystemAdmin === true,
   };
 }
 

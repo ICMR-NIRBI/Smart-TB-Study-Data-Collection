@@ -26,8 +26,8 @@ const flag = (name: string, fallback?: string) => {
 };
 const envPath = flag('env', process.env.SMARTTB_MONGO_ENV ?? '.env.mongo.local')!;
 const port = flag('port', '27018')!;
-const dbName = flag('db', 'smarttb')!;
 const env = readEnvFile(envPath);
+const dbName = flag('db', env.MONGODB_DB ?? 'smarttb')!;
 
 const APP_ROLE = 'smarttbApp';
 
@@ -49,20 +49,40 @@ async function upsertUser(admin: import('mongodb').Db, user: string, password: s
   await admin.command(exists ? { updateUser: user, pwd: password, roles } : { createUser: user, pwd: password, roles });
 }
 
-async function setup() {
+/** The app's role lists its collections one by one, each with the actions the schema allows: privileges can only be
+ *  added, never taken away, so a whole-database grant could not leave the audit trail append-only. */
+async function syncRole(admin: import('mongodb').Db) {
+  const privileges = SPECS.map((spec) => ({ resource: { db: dbName, collection: spec.name }, actions: spec.privileges }));
+  const roleSpec = { privileges, roles: [] as unknown[] };
+  const roleExists = (await admin.command({ rolesInfo: APP_ROLE })).roles.length > 0;
+  await admin.command(roleExists ? { updateRole: APP_ROLE, ...roleSpec } : { createRole: APP_ROLE, ...roleSpec });
+}
+
+function adminClient() {
   const adminUri = env.MONGO_ADMIN_URI;
   if (!adminUri) throw new Error(`MONGO_ADMIN_URI is missing from ${envPath}. Run the --bootstrap step first.`);
-  const client = new MongoClient(adminUri);
+  return new MongoClient(adminUri);
+}
+
+/** --sync-role: bring the app login's rights and the collections up to date with the schema. Passwords are unchanged. */
+async function syncOnly() {
+  const client = adminClient();
+  await client.connect();
+  try {
+    await syncRole(client.db('admin'));
+    await ensureSchema(client.db(dbName));
+    console.log(`App login rights and collections are up to date for "${dbName}" (${ALL_COLLECTIONS.length} collections).`);
+  } finally {
+    await client.close();
+  }
+}
+
+async function setup() {
+  const client = adminClient();
   await client.connect();
   try {
     const admin = client.db('admin');
-
-    // The app's role lists its collections one by one, each with the actions the schema allows: privileges can only
-    // be added, never taken away, so a whole-database grant could not leave the audit trail append-only.
-    const privileges = SPECS.map((spec) => ({ resource: { db: dbName, collection: spec.name }, actions: spec.privileges }));
-    const roleSpec = { privileges, roles: [] as unknown[] };
-    const roleExists = (await admin.command({ rolesInfo: APP_ROLE })).roles.length > 0;
-    await admin.command(roleExists ? { updateRole: APP_ROLE, ...roleSpec } : { createRole: APP_ROLE, ...roleSpec });
+    await syncRole(admin);
 
     const appPassword = newPassword();
     const ownerPassword = newPassword();
@@ -84,4 +104,4 @@ async function setup() {
   }
 }
 
-await (args.includes('--bootstrap') ? bootstrap() : setup());
+await (args.includes('--bootstrap') ? bootstrap() : args.includes('--sync-role') ? syncOnly() : setup());
