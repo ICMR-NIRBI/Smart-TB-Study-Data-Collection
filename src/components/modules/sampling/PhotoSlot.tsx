@@ -3,6 +3,7 @@ import { CameraIcon, Loader2Icon, UploadIcon } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { UNAUTHORIZED_EVENT } from '../../../utils/api';
 import { formatTimestamp } from '../../../utils/dates';
+import { IMAGE_ID_PATTERN } from '../../../utils/sampling';
 
 export interface PhotoInfo {
   id: string;
@@ -86,6 +87,8 @@ export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSa
   const [sent, setSent] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const what = kind === 'blood' ? 'blotting-paper blood photo' : 'plasma light-box photo';
+  // A photo is always filed under its image ID, so the ID comes first.
+  const idReady = IMAGE_ID_PATTERN.test(imageId);
 
   const upload = async (picked: File) => {
     setBusy(true);
@@ -143,7 +146,6 @@ export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSa
               <p className="font-medium text-ok-700">Photo attached</p>
               <p className="break-words">
                 {photo.uploadedBy} · {formatTimestamp(photo.uploadedAt)}
-                {photo.imageId && photo.imageId !== imageId ? ` · filed under ID ${photo.imageId}` : ''}
               </p>
             </>
           ) : (
@@ -153,6 +155,9 @@ export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSa
         </div>
       </div>
       {busy && <UploadProgress stage={stage} fraction={sent} what={what} />}
+      {!readOnly && !busy && !idReady && (
+        <p className="text-xs text-warn-700">{photo ? 'Enter the 4-digit image ID above; the photo is filed under it.' : 'Enter the 4-digit image ID above to add the photo.'}</p>
+      )}
       {!readOnly && (
         // Two ways in: the camera, or a picture already on the phone or computer. They wrap onto two lines on very
         // narrow screens instead of running off the edge.
@@ -163,7 +168,7 @@ export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSa
             className="min-w-[8.5rem] flex-1"
             icon={busy ? spinner : <CameraIcon className="h-4 w-4" aria-hidden="true" />}
             onClick={() => camera.current?.click()}
-            disabled={busy}
+            disabled={busy || !idReady}
             aria-label={photo ? `Take a new ${what}` : `Take the ${what}`}
           >
             {photo ? 'Retake' : 'Take photo'}
@@ -174,7 +179,7 @@ export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSa
             className="min-w-[8.5rem] flex-1"
             icon={busy ? spinner : <UploadIcon className="h-4 w-4" aria-hidden="true" />}
             onClick={() => file.current?.click()}
-            disabled={busy}
+            disabled={busy || !idReady}
             aria-label={photo ? `Upload a different ${what}` : `Upload the ${what} from this device`}
           >
             {photo ? 'Upload new' : 'Upload'}

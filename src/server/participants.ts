@@ -4,6 +4,7 @@ import { evaluateEligibility } from '../utils/clinical';
 import { getAccess, isIneligible, isRecordLocked, strictAccess } from '../utils/gating';
 import { ALL_MODULE_IDS, createUid, emptyCrf, emptyMeta, moduleKey } from '../utils/participant';
 import { validateModule } from '../utils/validation';
+import { IMAGE_ID_PATTERN } from '../utils/sampling';
 import { MIN_EDIT_REASON_LENGTH } from '../utils/accountRules';
 import type { CrfData, M10Reason, ModuleId, ModuleMeta, Participant } from '../types/crf';
 import { decryptContact, encryptContact } from './contactCrypto';
@@ -294,8 +295,28 @@ export async function patchModule(tx: Tx, user: ActingUser, uid: string, id: Mod
       if (isDuplicateKey(err)) throw new ApiError(409, 'This Participant ID is already in use');
       throw err;
     }
+    if (id === 5 && patch.timepoints && typeof patch.timepoints === 'object') await syncPhotoImageIds(tx, uid, patch.timepoints as Record<string, unknown>);
   }
   await touch(tx, uid);
+}
+
+/**
+ * Keeps each attached Module 5 photo filed under the image ID typed on the form: when the blood or plasma image ID of
+ * a timepoint changes, the current photo for that slot takes the new ID (in the same transaction, so the two never
+ * disagree; the change is in the audit log). Replaced photos keep the ID they had.
+ */
+async function syncPhotoImageIds(tx: Tx, uid: string, timepoints: Record<string, unknown>) {
+  const photos = await tx.find<{ _id: string; timepoint: string; kind: 'blood' | 'plasma'; image_id: string }>('crf_images', {
+    participant_uid: uid,
+    replaced_at: null,
+  });
+  for (const photo of photos) {
+    const entry = timepoints[photo.timepoint] as { bloodImg?: unknown; plasmaImg?: unknown } | undefined;
+    if (!entry) continue;
+    const typed = String((photo.kind === 'blood' ? entry.bloodImg : entry.plasmaImg) ?? '');
+    const imageId = IMAGE_ID_PATTERN.test(typed) ? typed : '';
+    if (imageId !== photo.image_id) await tx.updateOne('crf_images', { _id: photo._id as never }, { $set: { image_id: imageId } });
+  }
 }
 
 export async function saveDraft(tx: Tx, user: ActingUser, uid: string, id: ModuleId): Promise<Participant> {

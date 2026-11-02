@@ -5,6 +5,7 @@ import { ApiError } from './errors';
 import type { Reads, Tx } from './mongo/tx';
 import { assertModuleEditable, type ActingUser } from './participants';
 import { TIMEPOINTS } from '../data/timepoints';
+import { IMAGE_ID_PATTERN } from '../utils/sampling';
 
 /*
  * Module 5 photographs: the blood drop on blotting paper and the plasma vial against the light box, one of each per
@@ -86,7 +87,9 @@ export async function savePhoto(
   if (!TIMEPOINTS.some((t) => t.key === timepoint && !t.salivaOnly)) throw new ApiError(400, 'Choose a blood sampling timepoint');
   const kind = PHOTO_KINDS.find((k) => k === input.kind);
   if (!kind) throw new ApiError(400, 'Say whether this is the blood or the plasma photo');
-  const imageId = typeof input.imageId === 'string' && /^\d{0,4}$/.test(input.imageId) ? input.imageId : '';
+  // Every photo is filed under its 4-digit image ID (kept in step with the form afterwards: participants.ts).
+  const imageId = typeof input.imageId === 'string' ? input.imageId : '';
+  if (!IMAGE_ID_PATTERN.test(imageId)) throw new ApiError(400, 'Enter the 4-digit image ID before adding the photo');
   if (!input.bytes.length) throw new ApiError(400, 'The photo is empty');
   if (input.bytes.length > MAX_PHOTO_BYTES) throw new ApiError(413, 'The photo is too large (8 MB at most)');
   const type = detectType(input.bytes);

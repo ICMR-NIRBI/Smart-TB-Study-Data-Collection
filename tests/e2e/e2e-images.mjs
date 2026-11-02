@@ -85,6 +85,10 @@ r = await upload(ph, uid, { timepoint: '99' });
 check('an unknown timepoint is refused', r.status === 400, `${r.status}`);
 r = await upload(ph, uid, { kind: 'saliva' });
 check('only blood or plasma photos', r.status === 400, `${r.status}`);
+r = await upload(ph, uid, { imageId: '' });
+check('a photo needs its image ID first', r.status === 400 && /image ID/.test(r.json.error ?? ''), `${r.status} ${JSON.stringify(r.json)}`);
+r = await upload(ph, uid, { imageId: '12' });
+check('the image ID must be 4 digits', r.status === 400, `${r.status}`);
 r = await upload(ph, 'p_nosuch_participant');
 check('an unknown participant is a 404', r.status === 404, `${r.status}`);
 r = await upload(ph, '..%2F..%2Fetc');
@@ -125,6 +129,24 @@ const old = all.find((p) => p._id === first.id);
 check('the old one stays on record, marked replaced, its file kept', all.length === 3 && !!old?.replaced_at && !!old.replaced_by && existsSync(join(uploads, old.file)), JSON.stringify(all.map((p) => [p._id, p.replaced_at])));
 r = await ph(`/api/images/${first.id}`);
 check('and can still be opened', r.status === 200 && r.bytes?.equals(jpeg), `${r.status}`);
+
+// --- the photo follows the image ID typed on the form
+const tps = async () => (await ph(`/api/participants/${uid}`)).json.participant.data.m5.timepoints;
+const setIds = async (changes) => {
+  const timepoints = await tps();
+  for (const [tp, v] of Object.entries(changes)) timepoints[tp] = { ...timepoints[tp], ...v };
+  return ph(`/api/participants/${uid}/modules/5`, { method: 'PATCH', body: { patch: { timepoints } } });
+};
+r = await setIds({ 0: { bloodImg: '0777', plasmaImg: '0778' } });
+check('the form saves new image IDs', r.status === 200, `${r.status} ${JSON.stringify(r.json).slice(0, 160)}`);
+let current = (await ph(`/api/participants/${uid}/images`)).json.photos;
+check('each current photo now carries the ID typed on the form', current.find((p) => p.kind === 'blood')?.imageId === '0777' && current.find((p) => p.kind === 'plasma')?.imageId === '0778', JSON.stringify(current));
+check('the replaced photo keeps the ID it had', (await db.photos(uid)).find((p) => p._id === first.id)?.image_id === '0042');
+check('the change of ID is in the audit trail', (await db.audit('crf_images', second.id)).some((a) => a.action === 'UPDATE' && /image_id/.test(a.changes) && /0777/.test(a.changes)));
+r = await setIds({ 0: { bloodImg: '07' } });
+current = (await ph(`/api/participants/${uid}/images`)).json.photos;
+check('an unfinished ID on the form leaves the photo without one (never a wrong one)', current.find((p) => p.kind === 'blood')?.imageId === '', JSON.stringify(current));
+await setIds({ 0: { bloodImg: '0777' } });
 
 // --- audit trail
 const auditNew = await db.audit('crf_images', second.id);
