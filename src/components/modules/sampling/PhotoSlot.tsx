@@ -47,27 +47,65 @@ async function shrink(file: File): Promise<Blob> {
   }
 }
 
+type Stage = 'preparing' | 'uploading' | 'saving';
+
+/**
+ * Sends the form and reports how much has gone up. fetch cannot report upload progress, so this uses XMLHttpRequest.
+ * Resolves with the status and JSON body; rejects only when the request could not be made at all.
+ */
+function postWithProgress(url: string, form: FormData, onProgress: (fraction: number) => void): Promise<{ status: number; json: { photo?: PhotoInfo; error?: string } }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.withCredentials = true;
+    xhr.timeout = 180_000;
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      let json = {};
+      try {
+        json = JSON.parse(xhr.responseText);
+      } catch {
+        /* not JSON: handled by the status */
+      }
+      resolve({ status: xhr.status, json });
+    };
+    xhr.onerror = () => reject(new Error('The photo could not be sent. Check the connection and try again.'));
+    xhr.ontimeout = () => reject(new Error('The upload took too long. Check the connection and try again.'));
+    xhr.send(form);
+  });
+}
+
 /** Attach or replace the photo for one blood or plasma image of a timepoint. */
 export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSaved }: PhotoSlotProps) {
   const camera = useRef<HTMLInputElement>(null);
   const file = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState<Stage>('preparing');
+  const [sent, setSent] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const what = kind === 'blood' ? 'blotting-paper blood photo' : 'plasma light-box photo';
 
   const upload = async (picked: File) => {
     setBusy(true);
     setError(null);
+    setStage('preparing');
+    setSent(0);
     try {
       const form = new FormData();
       form.append('file', await shrink(picked), 'photo.jpg');
       form.append('timepoint', timepoint);
       form.append('kind', kind);
       form.append('imageId', imageId);
-      const res = await fetch(`/api/participants/${encodeURIComponent(uid)}/images`, { method: 'POST', body: form, credentials: 'same-origin' });
-      const json = (await res.json().catch(() => ({}))) as { photo?: PhotoInfo; error?: string };
+      setStage('uploading');
+      const res = await postWithProgress(`/api/participants/${encodeURIComponent(uid)}/images`, form, (fraction) => {
+        setSent(fraction);
+        if (fraction >= 1) setStage('saving');
+      });
+      const json = res.json;
       if (res.status === 401) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
-      if (!res.ok || !json.photo) throw new Error(json.error ?? `Upload failed (${res.status})`);
+      if (res.status < 200 || res.status >= 300 || !json.photo) throw new Error(json.error ?? `Upload failed (${res.status})`);
       onSaved(json.photo);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
@@ -109,10 +147,12 @@ export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSa
               </p>
             </>
           ) : (
-            <p>{busy ? 'Uploading…' : readOnly ? 'No photo attached' : 'No photo yet'}</p>
+            // While the first photo goes up, the progress bar below says what is happening.
+            !busy && <p>{readOnly ? 'No photo attached' : 'No photo yet'}</p>
           )}
         </div>
       </div>
+      {busy && <UploadProgress stage={stage} fraction={sent} what={what} />}
       {!readOnly && (
         // Two ways in: the camera, or a picture already on the phone or computer. They wrap onto two lines on very
         // narrow screens instead of running off the edge.
@@ -148,6 +188,36 @@ export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSa
           {error}
         </p>
       )}
+    </div>
+  );
+}
+
+const STAGE_LABEL: Record<Stage, string> = { preparing: 'Preparing photo…', uploading: 'Uploading…', saving: 'Saving…' };
+
+/** The bar under a photo while it goes up: preparing (shrinking on the phone), the share sent, then saving on the server. */
+function UploadProgress({ stage, fraction, what }: { stage: Stage; fraction: number; what: string }) {
+  const percent = stage === 'uploading' ? Math.round(fraction * 100) : stage === 'saving' ? 100 : 0;
+  const waiting = stage !== 'uploading';
+  return (
+    <div className="space-y-1" aria-live="polite">
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-medium text-ink-soft">{STAGE_LABEL[stage]}</span>
+        {stage === 'uploading' && <span className="tabular-nums text-ink-muted">{percent}%</span>}
+      </div>
+      <div
+        role="progressbar"
+        aria-label={`Uploading the ${what}`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={waiting ? undefined : percent}
+        aria-valuetext={waiting ? STAGE_LABEL[stage] : `${percent}%`}
+        className="h-2 overflow-hidden rounded-full bg-line"
+      >
+        <div
+          className={`h-full rounded-full bg-brand-600 transition-[width] duration-200 ease-out ${waiting ? 'animate-pulse' : ''}`}
+          style={{ width: `${stage === 'preparing' ? 8 : percent}%` }}
+        />
+      </div>
     </div>
   );
 }
