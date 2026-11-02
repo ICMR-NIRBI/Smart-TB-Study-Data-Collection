@@ -98,6 +98,25 @@ openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:BACKUP_PASSPHRASE -in
 
 Test a restore once a month into a scratch database (`OPERATIONS.md` section 6).
 
+### A copy on another computer (restricted pull account)
+
+A PC can download the encrypted backups every hour with `deploy/pull-backups.ps1`. Give it its own key on a
+restricted account that can only list and download the backup files (no shell, no tunnels, nothing else):
+
+```bash
+groupadd -f smarttb-pull && usermod -aG smarttb-pull smarttb
+useradd --system --create-home --shell /bin/bash --groups smarttb-pull backuppull && passwd -l backuppull
+install -m 755 /opt/smarttb/app/deploy/backup-serve.sh /usr/local/bin/smarttb-backup-serve
+setfacl -m u:backuppull:x /opt/smarttb && setfacl -m u:backuppull:rx /opt/smarttb/backups   # apt install acl if missing
+echo "BACKUP_READ_GROUP=smarttb-pull" >> /opt/smarttb/.env      # new backups become readable by that group
+install -d -o backuppull -g backuppull -m 700 /home/backuppull/.ssh
+echo 'restrict,command="/usr/local/bin/smarttb-backup-serve" <the PC public key>' > /home/backuppull/.ssh/authorized_keys
+chown backuppull:backuppull /home/backuppull/.ssh/authorized_keys && chmod 600 /home/backuppull/.ssh/authorized_keys
+```
+
+On the PC: `pull-backups.ps1 -KeyPath <private key> -Dest <folder> -Server <server IP> -User backuppull`. The files
+stay encrypted; the PC never needs the backup passphrase.
+
 ## Before the first real participant
 
 - [ ] `ALLOW_TEST_LOGIN=false`, `NEXT_PUBLIC_CRF_PREVIEW=false`, redeployed

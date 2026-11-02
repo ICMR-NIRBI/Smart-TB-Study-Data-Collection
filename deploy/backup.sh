@@ -37,6 +37,8 @@ SIZE="$(stat -c %s "$FILE")"
 if (( SIZE < 200 )); then echo "Backup is suspiciously small ($SIZE bytes)"; exit 1; fi
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:BACKUP_PASSPHRASE -in "$FILE" | gzip -t
 OK=yes
+# Optional: let the restricted backup-pull account (deploy/backup-serve.sh) read the encrypted file.
+if [[ -n "${BACKUP_READ_GROUP:-}" ]]; then chgrp "$BACKUP_READ_GROUP" "$FILE" && chmod 640 "$FILE"; fi
 echo "Backup written and verified: $FILE ($(du -h "$FILE" | cut -f1))"
 
 # Keep the 72 newest local copies (3 days of hourly backups, so a PC that pulls copies can catch up after a weekend).
