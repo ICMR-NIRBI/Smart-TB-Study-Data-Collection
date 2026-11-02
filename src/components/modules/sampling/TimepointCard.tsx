@@ -127,9 +127,9 @@ export function TimepointCard({ def, entry, t0, readOnly, errors, onChange, uid,
                   }
                 />
                 {!def.salivaOnly && (
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-start">
                     <CheckToggle label="Blood collected" description="1.5–2.0 mL in EDTA" checked={entry.blood} onChange={(v) => onChange({ blood: v })} readOnly={readOnly} />
-                    <div>
+                    <div className="min-w-0">
                       <InputField
                         id={`${prefix}-bloodImg`}
                         label="Blotting-paper blood image ID"
@@ -145,7 +145,7 @@ export function TimepointCard({ def, entry, t0, readOnly, errors, onChange, uid,
                       <PhotoSlot uid={uid} timepoint={def.key} kind="blood" imageId={entry.bloodImg} photo={photos.blood} readOnly={readOnly} onSaved={onPhotoSaved} />
                     </div>
                     <CheckToggle label="Plasma separated" description="Immediately after collection" checked={entry.plasma} onChange={(v) => onChange({ plasma: v })} readOnly={readOnly} />
-                    <div>
+                    <div className="min-w-0">
                       <InputField
                         id={`${prefix}-plasmaImg`}
                         label="Plasma light-box image ID"
@@ -169,7 +169,7 @@ export function TimepointCard({ def, entry, t0, readOnly, errors, onChange, uid,
                     />
                   </div>
                 )}
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <CheckToggle label="Saliva swab collected" checked={entry.salivaSwab} onChange={(v) => onChange({ salivaSwab: v })} readOnly={readOnly} />
                   <CheckToggle label="Saliva paper collected" checked={entry.salivaPaper} onChange={(v) => onChange({ salivaPaper: v })} readOnly={readOnly} />
                 </div>

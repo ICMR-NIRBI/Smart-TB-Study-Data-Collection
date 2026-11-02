@@ -23,7 +23,7 @@ export function SignOffFields({ nameId, nameLabel, name, dateId, date, onChange,
   const setName = (v: string) => onChange({ name: v, signDate: v.trim() ? date || todayISO() : '' });
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <InputField
         id={nameId}
         label={nameLabel}

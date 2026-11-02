@@ -22,7 +22,7 @@ export function Module1Identification({ participant, data, update, readOnly, err
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <InputField
           id="participantId"
           label="Participant ID"
@@ -105,7 +105,7 @@ export function Module1Identification({ participant, data, update, readOnly, err
         {participant.contactsHidden ? (
           <p className="p-4 text-sm text-ink-muted">Phone and address are visible only to the PI and the study administrator.</p>
         ) : (
-        <div className="grid gap-4 p-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">
           <InputField
             id="phone"
             label="Contact phone"

@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { CameraIcon, Loader2Icon } from 'lucide-react';
+import { CameraIcon, Loader2Icon, UploadIcon } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { UNAUTHORIZED_EVENT } from '../../../utils/api';
 import { formatTimestamp } from '../../../utils/dates';
@@ -49,17 +49,18 @@ async function shrink(file: File): Promise<Blob> {
 
 /** Attach or replace the photo for one blood or plasma image of a timepoint. */
 export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSaved }: PhotoSlotProps) {
-  const input = useRef<HTMLInputElement>(null);
+  const camera = useRef<HTMLInputElement>(null);
+  const file = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const what = kind === 'blood' ? 'blotting-paper blood photo' : 'plasma light-box photo';
 
-  const upload = async (file: File) => {
+  const upload = async (picked: File) => {
     setBusy(true);
     setError(null);
     try {
       const form = new FormData();
-      form.append('file', await shrink(file), 'photo.jpg');
+      form.append('file', await shrink(picked), 'photo.jpg');
       form.append('timepoint', timepoint);
       form.append('kind', kind);
       form.append('imageId', imageId);
@@ -72,13 +73,20 @@ export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSa
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setBusy(false);
-      if (input.current) input.current.value = '';
+      if (camera.current) camera.current.value = '';
+      if (file.current) file.current.value = '';
     }
   };
 
+  const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) void upload(file);
+  };
+  const spinner = <Loader2Icon className="h-4 w-4 animate-spin" aria-hidden="true" />;
+
   return (
-    <div className="mt-2 space-y-1.5">
-      <div className="flex items-center gap-3">
+    <div className="mt-2 min-w-0 space-y-2">
+      <div className="flex min-w-0 items-center gap-3">
         {photo ? (
           <a
             href={`/api/images/${photo.id}`}
@@ -95,40 +103,46 @@ export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSa
           {photo ? (
             <>
               <p className="font-medium text-ok-700">Photo attached</p>
-              <p className="truncate">
+              <p className="break-words">
                 {photo.uploadedBy} · {formatTimestamp(photo.uploadedAt)}
                 {photo.imageId && photo.imageId !== imageId ? ` · filed under ID ${photo.imageId}` : ''}
               </p>
             </>
           ) : (
-            <p>{readOnly ? 'No photo attached' : 'No photo yet'}</p>
+            <p>{busy ? 'Uploading…' : readOnly ? 'No photo attached' : 'No photo yet'}</p>
           )}
         </div>
-        {!readOnly && (
+      </div>
+      {!readOnly && (
+        // Two ways in: the camera, or a picture already on the phone or computer. They wrap onto two lines on very
+        // narrow screens instead of running off the edge.
+        <div className="flex flex-wrap gap-2">
           <Button
             variant="secondary"
-            icon={busy ? <Loader2Icon className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CameraIcon className="h-4 w-4" aria-hidden="true" />}
-            onClick={() => input.current?.click()}
+            size="sm"
+            className="min-w-[8.5rem] flex-1"
+            icon={busy ? spinner : <CameraIcon className="h-4 w-4" aria-hidden="true" />}
+            onClick={() => camera.current?.click()}
             disabled={busy}
-            aria-label={photo ? `Replace the ${what}` : `Add the ${what}`}
+            aria-label={photo ? `Take a new ${what}` : `Take the ${what}`}
           >
-            {busy ? 'Uploading…' : photo ? 'Replace' : 'Add photo'}
+            {photo ? 'Retake' : 'Take photo'}
           </Button>
-        )}
-        <input
-          ref={input}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          aria-hidden="true"
-          tabIndex={-1}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void upload(file);
-          }}
-        />
-      </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="min-w-[8.5rem] flex-1"
+            icon={busy ? spinner : <UploadIcon className="h-4 w-4" aria-hidden="true" />}
+            onClick={() => file.current?.click()}
+            disabled={busy}
+            aria-label={photo ? `Upload a different ${what}` : `Upload the ${what} from this device`}
+          >
+            {photo ? 'Upload new' : 'Upload'}
+          </Button>
+        </div>
+      )}
+      <input ref={camera} type="file" accept="image/*" capture="environment" className="hidden" aria-hidden="true" tabIndex={-1} onChange={onPick} />
+      <input ref={file} type="file" accept="image/jpeg,image/png,image/webp,image/*" className="hidden" aria-hidden="true" tabIndex={-1} onChange={onPick} />
       {error && (
         <p role="alert" className="text-sm text-danger-700">
           {error}

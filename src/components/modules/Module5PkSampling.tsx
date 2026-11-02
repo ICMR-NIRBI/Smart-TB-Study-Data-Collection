@@ -53,7 +53,7 @@ export function Module5PkSampling({ participant, data, update, readOnly, errors 
   return (
     <div className="space-y-4">
       <SectionCard title="Dosing & fasting" forceOpen={hasErrorIn(errors, ['samplingDate', 't0', 'fastingConfirmed'])}>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <InputField
             id="samplingDate"
             label="Sampling date"

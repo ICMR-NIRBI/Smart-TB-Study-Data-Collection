@@ -344,7 +344,7 @@ export function StaffSheet({ member, roles, isSelf, canDelete, onClose, onUpdate
 
         {!isSelf && (
           <Section title="Sign-in">
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {member.status === 'invited' && (
                 <Button variant="secondary" icon={<SendIcon className="h-4 w-4" aria-hidden="true" />} onClick={() => void resend()} disabled={busy}>
                   New setup link

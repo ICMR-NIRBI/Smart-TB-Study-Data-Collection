@@ -24,7 +24,7 @@ export function Module8MonthTwo({ participant, data, update, readOnly, errors }:
   return (
     <div className="space-y-4">
       <SectionCard title="Day 60 evaluation" forceOpen={hasErrorIn(errors, ['evalDate', 'cumulativeCompliance', 'smear', 'smearGrade', 'culture', 'outcome'])}>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <InputField
             id="evalDate"
             label="Evaluation date"
@@ -120,7 +120,7 @@ export function Module8MonthTwo({ participant, data, update, readOnly, errors }:
           />
           {data.lpaPerformed === 'yes' && (
             <>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <InputField id="lpaDate" label="LPA date" kind="date" value={data.lpaDate} onChange={(v) => update({ lpaDate: v })} required readOnly={readOnly} error={errors.lpaDate} />
                 <InputField id="labName" label="NABL lab name / ID" value={data.labName} onChange={(v) => update({ labName: v })} required readOnly={readOnly} error={errors.labName} />
               </div>

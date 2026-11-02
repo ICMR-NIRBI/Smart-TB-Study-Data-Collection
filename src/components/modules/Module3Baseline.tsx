@@ -143,7 +143,7 @@ export function Module3Baseline({ participant, data, update, readOnly, errors, o
         forceOpen={hasErrorIn(errors, ['smear', 'mtbDetected', 'rifResistance', 'micR', 'micH', 'micZ', 'micE'])}
       >
         <ChoiceField id="smear" label="Sputum AFB smear" options={SMEAR_OPTIONS} value={data.smear} onChange={(v) => update({ smear: v })} required readOnly={readOnly} error={errors.smear} />
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <ChoiceField
             id="mtbDetected"
             label="CBNAAT / LPA: M. tuberculosis detected"
