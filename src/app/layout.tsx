@@ -26,6 +26,8 @@ export const metadata: Metadata = {
   // Added to an iPhone home screen: its name and a full-screen launch (the manifest does the same on Android).
   appleWebApp: { capable: true, title: 'SMART-TB', statusBarStyle: 'black-translucent' },
   formatDetection: { telephone: false },
+  // Google Search Console ownership check (alerts if Google ever flags the site as unsafe; it does not list the site).
+  verification: { google: 'qMQDdf5zM230OZ4UmG1mM9rTLb6YgXa7EyCaR7qQFnc' },
 };
 
 export const viewport: Viewport = {
