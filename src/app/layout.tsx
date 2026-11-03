@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, title: 'SMART-TB', statusBarStyle: 'black-translucent' },
   formatDetection: { telephone: false },
   // Google Search Console ownership check (alerts if Google ever flags the site as unsafe; it does not list the site).
-  verification: { google: 'qMQDdf5zM230OZ4UmG1mM9rTLb6YgXa7EyCaR7qQFnc' },
+  verification: { google: 'o-oAwVtGZ9PC2UBFodxNpFXaCBQsVg7VgaMOfdoshzY' },
 };
 
 export const viewport: Viewport = {
