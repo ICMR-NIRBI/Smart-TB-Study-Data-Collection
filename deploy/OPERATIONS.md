@@ -5,6 +5,7 @@ Every command was tried on this server, except two that would change real accoun
 
 ## 1. Where things are
 
+- Website: https://smarttb-edc.in (HTTPS since 2026-11-03; www and the old IP address redirect to it). Domain registered at MilesWeb, DNS on MilesWeb's nameservers (DNS records are added by MilesWeb support: ticket #MW5758845 added the A records).
 - Server: Ubuntu 24.04, public IP 45.195.159.88, MilesWeb VPS (service SM-L2). (The earlier Azure server, 135.235.138.35, was cleared on 2026-11-02 and is no longer used.)
 - Login user: root. Login is by key file only; passwords are switched off (/etc/ssh/sshd_config.d/00-smarttb-keyonly.conf). The commands below start with `sudo`; as root that does nothing and is harmless.
 - Key file: smarttb_milesweb (on the developer's PC: C:\Users\<you>\.ssh\smarttb_milesweb). Never email it.
@@ -283,7 +284,8 @@ Use this if the server is lost. About 1 to 2 hours.
 
 ## 9. Not done yet (do before the first real participant)
 
-- HTTPS: needs a domain name pointing to 45.195.159.88. Then replace /etc/caddy/Caddyfile with deploy/Caddyfile (domain filled in), `sudo systemctl reload caddy`, set COOKIE_SECURE=true in .env, `sudo systemctl restart smarttb`. Until then passwords travel unencrypted.
+- HTTPS: done 2026-11-03 (deploy/Caddyfile; COOKIE_SECURE=true and APP_BASE_URL=https://smarttb-edc.in in .env; the earlier files are kept as /etc/caddy/Caddyfile.ip-only.bak and /opt/smarttb/.env.before-https.bak). After a few trouble-free weeks, raise Strict-Transport-Security in /etc/caddy/Caddyfile to max-age=31536000 and reload Caddy.
+- Institute firewalls: networks with a FortiGate (the Amity campus does) block brand-new domains as "Newly Observed Domain" for a while; users there see "Web Filter Violation" or a browser privacy error. Ask that network's IT to allow smarttb-edc.in, or submit it for rating at fortiguard.com/webfilter. Mobile data and normal networks are unaffected.
 - A backup copy that is not on this server or the desktop. Ask IT for separate storage.
 - Two-step sign-in for staff.
 - Create the real administrator accounts. There are no demo accounts on this server.

@@ -1,11 +1,22 @@
-# Production: replace smarttb.example.in with the real domain, then copy to /etc/caddy/Caddyfile and run
+# Production (MilesWeb, 45.195.159.88): https://smarttb-edc.in. Copy to /etc/caddy/Caddyfile and run
 #   systemctl reload caddy
 # Caddy obtains and renews the Let's Encrypt certificate automatically and redirects http to https.
-smarttb.example.in {
+# The app needs COOKIE_SECURE=true and APP_BASE_URL=https://smarttb-edc.in in /opt/smarttb/.env.
+smarttb-edc.in {
 	encode gzip
 	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		# One day to start with (since 2026-11-03); raise to a year (31536000) once HTTPS has run without trouble for a few weeks.
+		Strict-Transport-Security "max-age=86400"
 		-Server
 	}
 	reverse_proxy 127.0.0.1:3000
+}
+
+www.smarttb-edc.in {
+	redir https://smarttb-edc.in{uri} permanent
+}
+
+# Old links to the bare IP address go to the domain.
+http://45.195.159.88 {
+	redir https://smarttb-edc.in{uri} permanent
 }
