@@ -26,10 +26,13 @@ export function assertSystemAdmin(user: { email: string }) {
 // The system log: failed sign-ins and unexpected server errors (sign-ins and password changes are in the audit trail)
 // ---------------------------------------------------------------------------
 
-export type SystemEventKind = 'SIGN_IN_FAILED' | 'SERVER_ERROR';
+export type SystemEventKind = 'SIGN_IN_FAILED' | 'SERVER_ERROR' | 'CLIENT_ERROR';
 
 /** Records an event. Never throws: a logging problem must not break sign-in or turn one error into two. */
-export async function logEvent(kind: SystemEventKind, fields: { email?: string; reason?: string; ip?: string | null; userAgent?: string | null }): Promise<void> {
+export async function logEvent(
+  kind: SystemEventKind,
+  fields: { email?: string; reason?: string; ip?: string | null; userAgent?: string | null; /** The app page it happened on. */ page?: string },
+): Promise<void> {
   try {
     await withTransaction({}, (tx) =>
       tx.insertOne(SYSTEM_LOG_COLLECTION, {
@@ -40,6 +43,7 @@ export async function logEvent(kind: SystemEventKind, fields: { email?: string; 
         reason: (fields.reason ?? '').slice(0, 500),
         ip: fields.ip ?? null,
         user_agent: fields.userAgent ?? null,
+        page: fields.page ?? null,
       }),
     );
   } catch (err) {
@@ -127,9 +131,21 @@ const PASSWORD_EVENTS: Record<string, string> = {
   PASSWORD_SET: 'Set their password from a setup link',
   SETUP_LINK: 'Setup link issued',
   PASSWORD_SET_BY_SYSTEM: 'Password set from the system control page',
+  SIGN_IN_UNLOCKED: 'Sign-in unlocked from the system control page',
+  SIGNED_OUT_EVERYWHERE: 'Signed out on all devices from the system control page',
 };
 
-export async function systemLogs(limit = 100): Promise<{ signIns: LogEntry[]; failedSignIns: LogEntry[]; passwords: LogEntry[]; errors: LogEntry[] }> {
+export interface ErrorGroup {
+  source: 'server' | 'browser';
+  message: string;
+  count: number;
+  first: string;
+  last: string;
+  pages: string[];
+  people: string[];
+}
+
+export async function systemLogs(limit = 100): Promise<{ signIns: LogEntry[]; failedSignIns: LogEntry[]; passwords: LogEntry[]; errors: LogEntry[]; errorGroups: ErrorGroup[] }> {
   const signInDocs = await reader.find<AuditDoc>('audit_log', { table_name: 'sessions', action: { $in: ['SIGN_IN', 'TEST_SIGN_IN', 'SIGN_OUT'] } }, { sort: { at: -1, _id: -1 }, limit });
   const passwordDocs = await reader.find<AuditDoc>(
     'audit_log',
@@ -163,8 +179,12 @@ export async function systemLogs(limit = 100): Promise<{ signIns: LogEntry[]; fa
       return { at: d.at.toISOString(), event, account: nameOf(d.row_key), by: d.user_id && d.user_id !== d.row_key ? nameOf(d.user_id) : '', detail: d.reason ?? '' };
     });
 
-  const logDocs = async (kind: SystemEventKind) =>
-    reader.find<{ at: Date; email: string | null; reason: string; ip: string | null; user_agent: string | null }>(SYSTEM_LOG_COLLECTION, { kind }, { sort: { at: -1, _id: -1 }, limit });
+  const logDocs = async (kind: SystemEventKind | SystemEventKind[], n = limit) =>
+    reader.find<{ at: Date; kind: SystemEventKind; email: string | null; reason: string; ip: string | null; user_agent: string | null; page: string | null }>(
+      SYSTEM_LOG_COLLECTION,
+      { kind: Array.isArray(kind) ? { $in: kind } : kind },
+      { sort: { at: -1, _id: -1 }, limit: n },
+    );
   const failedSignIns = (await logDocs('SIGN_IN_FAILED')).map<LogEntry>((d) => ({
     at: d.at.toISOString(),
     event: 'Sign-in refused',
@@ -172,8 +192,28 @@ export async function systemLogs(limit = 100): Promise<{ signIns: LogEntry[]; fa
     by: '',
     detail: [d.reason, d.ip ? `from ${d.ip}` : ''].filter(Boolean).join(', '),
   }));
-  const errors = (await logDocs('SERVER_ERROR')).map<LogEntry>((d) => ({ at: d.at.toISOString(), event: 'Server error', account: '', by: '', detail: d.reason }));
-  return { signIns, failedSignIns, passwords, errors };
+  const errorDocs = await logDocs(['SERVER_ERROR', 'CLIENT_ERROR'], 1000);
+  const errors = errorDocs.slice(0, limit).map<LogEntry>((d) => ({
+    at: d.at.toISOString(),
+    event: d.kind === 'CLIENT_ERROR' ? 'Error in a browser' : 'Server error',
+    account: d.email ?? '',
+    by: '',
+    detail: [d.reason, d.page ? `on ${d.page}` : '', d.kind === 'CLIENT_ERROR' && d.user_agent ? deviceOf(d.user_agent) : ''].filter(Boolean).join(' · '),
+  }));
+  // The same problem happening again and again is one line, with how often, where and for whom.
+  const groups = new Map<string, ErrorGroup>();
+  for (const d of errorDocs) {
+    const source = d.kind === 'CLIENT_ERROR' ? 'browser' : 'server';
+    const key = `${source}|${d.reason.replace(/\d+/g, '#')}`;
+    const g = groups.get(key) ?? { source, message: d.reason, count: 0, first: d.at.toISOString(), last: d.at.toISOString(), pages: [], people: [] };
+    g.count++;
+    g.first = d.at.toISOString(); // newest first, so the last one seen is the oldest
+    if (d.page && !g.pages.includes(d.page) && g.pages.length < 5) g.pages.push(d.page);
+    if (d.email && !g.people.includes(d.email) && g.people.length < 5) g.people.push(d.email);
+    groups.set(key, g);
+  }
+  const errorGroups = [...groups.values()].sort((a, b) => b.last.localeCompare(a.last));
+  return { signIns, failedSignIns, passwords, errors, errorGroups };
 }
 
 // ---------------------------------------------------------------------------
@@ -200,4 +240,74 @@ export async function setAccountPassword(tx: Tx, actor: { id: string; email: str
   await applyTemporaryPassword(tx, userId, password, actor.id, mustChange);
   await tx.record('app_users', userId, 'PASSWORD_SET_BY_SYSTEM', [{ field: 'must_change_password', old: null, new: mustChange }]);
   return { email: user.email, name: user.display_name, mustChange };
+}
+
+/** A short device description from a browser's user agent ("Android phone · Chrome"). */
+export function deviceOf(ua: string | null | undefined): string {
+  if (!ua) return 'Unknown device';
+  const os = /iPhone|iPad/.test(ua)
+    ? 'iPhone/iPad'
+    : /Android/.test(ua)
+      ? /Mobile/.test(ua)
+        ? 'Android phone'
+        : 'Android tablet'
+      : /Windows/.test(ua)
+        ? 'Windows computer'
+        : /Mac OS X/.test(ua)
+          ? 'Mac'
+          : /Linux/.test(ua)
+            ? 'Linux computer'
+            : /curl|node|undici/i.test(ua)
+              ? 'Script'
+              : 'Other device';
+  const browser = /Edg\//.test(ua) ? 'Edge' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : '';
+  return browser ? `${os} · ${browser}` : os;
+}
+
+// ---------------------------------------------------------------------------
+// Account rescue: a locked sign-in, and signed-in devices
+// ---------------------------------------------------------------------------
+
+export interface AccountAccess {
+  id: string;
+  name: string;
+  email: string;
+  lock: { failedAttempts: number; lockedUntil: string | null };
+  devices: { started: string; lastActive: string; device: string }[];
+}
+
+/** Whether the account's sign-in is locked after wrong passwords, and the devices it is signed in on. */
+export async function accountAccess(id: string): Promise<AccountAccess> {
+  const user = await reader.findOne<{ _id: string; email: string; display_name: string }>('app_users', { _id: id as never });
+  if (!user) throw new ApiError(404, 'Account not found');
+  const attempt = await reader.findOne<{ fails: number; locked_until: Date | null }>('login_attempts', { _id: user.email as never });
+  const sessions = await reader.find<{ created_at: Date; last_active_at: Date; user_agent: string | null }>('sessions', { user_id: id }, { sort: { last_active_at: -1 } });
+  const lockedUntil = attempt?.locked_until && attempt.locked_until.getTime() > Date.now() ? attempt.locked_until.toISOString() : null;
+  return {
+    id,
+    name: user.display_name,
+    email: user.email,
+    lock: { failedAttempts: attempt?.fails ?? 0, lockedUntil },
+    devices: sessions.map((x) => ({ started: x.created_at.toISOString(), lastActive: x.last_active_at.toISOString(), device: deviceOf(x.user_agent) })),
+  };
+}
+
+/** Unlocks a sign-in locked after wrong passwords, or signs the account out on every device. Reason required. */
+export async function rescueAccount(tx: Tx, actor: { id: string; email: string }, body: Record<string, unknown>): Promise<void> {
+  assertSystemAdmin(actor);
+  const userId = typeof body.userId === 'string' ? body.userId : '';
+  if (!userId) throw new ApiError(400, 'Choose an account');
+  requireReason(body.reason);
+  const user = await tx.findOne<{ _id: string; email: string }>('app_users', { _id: userId as never });
+  if (!user) throw new ApiError(404, 'Account not found');
+  if (body.action === 'unlock') {
+    await tx.deleteMany('login_attempts', { _id: user.email as never });
+    await tx.record('app_users', userId, 'SIGN_IN_UNLOCKED');
+  } else if (body.action === 'signout') {
+    if (userId === actor.id) throw new ApiError(409, 'This would sign you out too. Use Sign out in your account menu instead.');
+    await tx.deleteMany('sessions', { user_id: userId });
+    await tx.record('app_users', userId, 'SIGNED_OUT_EVERYWHERE');
+  } else {
+    throw new ApiError(400, 'Unknown action');
+  }
 }

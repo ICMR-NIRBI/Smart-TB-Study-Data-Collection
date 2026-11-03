@@ -27,6 +27,24 @@ sudo -u smarttb -H git -C "$APP" reset --hard "$REF"
 # Where Module 5 photos are kept (the service may write only here and in the build folder).
 install -d -o smarttb -g smarttb -m 750 /opt/smarttb/uploads
 
+# Server helpers, from this copy of the deploy folder: the service file, the hourly backup, the backup-pull account's
+# command, and the System control helper (backup now, restart). Installing them every time keeps the server in step.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+echo "==> Installing server helpers"
+install -m 644 "$HERE/smarttb.service" /etc/systemd/system/smarttb.service
+install -m 755 "$HERE/backup.sh" /usr/local/bin/smarttb-backup
+if id backuppull >/dev/null 2>&1; then
+  install -m 755 "$HERE/backup-serve.sh" /usr/local/bin/smarttb-backup-serve
+  install -d -o backuppull -g backuppull -m 755 /var/lib/smarttb-pull
+fi
+install -m 755 "$HERE/smarttb-actions.sh" /usr/local/bin/smarttb-actions
+install -m 644 "$HERE/smarttb-actions.path" "$HERE/smarttb-actions.service" /etc/systemd/system/
+install -d -o smarttb -g smarttb -m 750 /opt/smarttb/actions
+install -d -m 755 /var/lib/smarttb-actions
+touch /var/lib/smarttb-actions/installed
+systemctl daemon-reload
+systemctl enable --now smarttb-actions.path >/dev/null
+
 echo "==> Installing dependencies and building"
 as_app "npm ci --no-audit --no-fund"
 as_app "npm run build"

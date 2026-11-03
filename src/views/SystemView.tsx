@@ -11,18 +11,11 @@ import { Alert } from '../components/ui/Alert';
 import { api } from '../utils/api';
 import { formatTimestamp } from '../utils/dates';
 import { MIN_ADMIN_REASON_LENGTH, generateTemporaryPassword, passwordProblem } from '../utils/accountRules';
+import { HealthPanel, type Health } from './system/HealthPanel';
+import { ServerPanel, type ServerActionsStatus, type SiteSettings } from './system/ServerPanel';
+import { RescuePanel } from './system/RescuePanel';
+import { AuditPanel } from './system/AuditPanel';
 
-interface Status {
-  database: 'ok' | 'error';
-  databaseDetail: string;
-  accounts: number;
-  activeAccounts: number;
-  participants: number;
-  auditEntries: number;
-  lastBackup: { file: string; at: string; bytes: number; count: number } | null;
-  backupDetail: string;
-  serverTime: string;
-}
 interface Account {
   id: string;
   name: string;
@@ -38,38 +31,43 @@ interface LogEntry {
   by: string;
   detail: string;
 }
+interface ErrorGroup {
+  source: 'server' | 'browser';
+  message: string;
+  count: number;
+  first: string;
+  last: string;
+  pages: string[];
+  people: string[];
+}
 interface Logs {
   signIns: LogEntry[];
   failedSignIns: LogEntry[];
   passwords: LogEntry[];
   errors: LogEntry[];
+  errorGroups: ErrorGroup[];
 }
-type LogTab = keyof Logs;
+type LogTab = 'signIns' | 'failedSignIns' | 'passwords' | 'errors';
 
 const TABS: { key: LogTab; label: string }[] = [
   { key: 'signIns', label: 'Sign-ins' },
   { key: 'failedSignIns', label: 'Failed sign-ins' },
-  { key: 'passwords', label: 'Passwords' },
+  { key: 'passwords', label: 'Account changes' },
   { key: 'errors', label: 'Errors' },
 ];
 
 const fieldCls =
   'mt-2 h-12 w-full rounded-lg border border-line-strong bg-white px-3.5 text-base text-ink outline-none focus:border-brand-600 focus:ring-[3px] focus:ring-brand-600/20';
 
-function Stat({ label, value, sub, bad }: { label: string; value: string; sub?: string; bad?: boolean }) {
-  return (
-    <div className={`rounded-xl border p-3 ${bad ? 'border-danger-200 bg-danger-50' : 'border-line bg-white'}`}>
-      <p className="text-xs font-medium text-ink-muted">{label}</p>
-      <p className={`mt-0.5 text-lg font-semibold tabular-nums ${bad ? 'text-danger-700' : 'text-ink'}`}>{value}</p>
-      {sub && <p className="mt-0.5 text-xs text-ink-muted">{sub}</p>}
-    </div>
-  );
-}
-
-/** For the person who looks after the whole application: status, setting any account's password, and the logs. */
+/**
+ * For the person who looks after the whole application: health, server actions and maintenance, account rescue, setting
+ * any account's password, the logs, and the audit trail.
+ */
 export function SystemView() {
   const { session } = useAuth();
-  const [status, setStatus] = useState<Status | null>(null);
+  const [health, setHealth] = useState<Health | null>(null);
+  const [actions, setActions] = useState<ServerActionsStatus | null>(null);
+  const [site, setSite] = useState<SiteSettings | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [logs, setLogs] = useState<Logs | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -88,8 +86,10 @@ export function SystemView() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api<{ status: Status; accounts: Account[]; logs: Logs }>('/api/system');
-      setStatus(res.status);
+      const res = await api<{ health: Health; actions: ServerActionsStatus; site: SiteSettings; accounts: Account[]; logs: Logs }>('/api/system');
+      setHealth(res.health);
+      setActions(res.actions);
+      setSite(res.site);
       setAccounts(res.accounts);
       setLogs(res.logs);
       setLoadError(null);
@@ -160,7 +160,7 @@ export function SystemView() {
           </Link>
           <div className="min-w-0 flex-1">
             <h1 className="text-2xl font-semibold tracking-tight text-ink">System control</h1>
-            <p className="text-sm text-ink-muted">Status, passwords and logs for the whole application.</p>
+            <p className="text-sm text-ink-muted">Health, fixes and logs for the whole application.</p>
           </div>
           <Button variant="secondary" icon={loading ? <Loader2Icon className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCwIcon className="h-4 w-4" aria-hidden="true" />} onClick={() => void load()} disabled={loading}>
             Refresh
@@ -171,27 +171,9 @@ export function SystemView() {
       <main className="mx-auto max-w-3xl space-y-4 px-4 pb-24 pt-4">
         {loadError && <Alert tone="danger" title={loadError} />}
 
-        <SectionCard title="Status">
-          {!status ? (
-            <p className="flex items-center gap-2 text-sm text-ink-muted">
-              <Loader2Icon className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading…
-            </p>
-          ) : (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              <Stat label="Database" value={status.database === 'ok' ? 'Working' : 'Not responding'} sub={status.databaseDetail || undefined} bad={status.database !== 'ok'} />
-              <Stat label="Accounts" value={`${status.activeAccounts} active`} sub={`${status.accounts} in total`} />
-              <Stat label="Participants" value={String(status.participants)} />
-              <Stat
-                label="Last backup"
-                value={status.lastBackup ? formatTimestamp(status.lastBackup.at) : 'None'}
-                sub={status.lastBackup ? `${Math.ceil(status.lastBackup.bytes / 1024)} KB · ${status.lastBackup.count} kept` : status.backupDetail}
-                bad={!status.lastBackup || Date.now() - new Date(status.lastBackup.at).getTime() > 3 * 3600 * 1000}
-              />
-              <Stat label="Audit trail" value={`${status.auditEntries} entries`} />
-              <Stat label="Server time" value={formatTimestamp(status.serverTime)} />
-            </div>
-          )}
-        </SectionCard>
+        <HealthPanel health={health} />
+        <ServerPanel actions={actions} site={site} onActions={setActions} onSite={setSite} />
+        <RescuePanel accounts={accounts} onChanged={() => void load()} />
 
         <SectionCard title="Set a password for an account" subtitle="For when someone cannot use Reset password, or an account needs a known password.">
           <div className="space-y-4">
@@ -261,7 +243,7 @@ export function SystemView() {
           <div role="tablist" aria-label="Log" className="scrollbar-none -mx-1 flex gap-2 overflow-x-auto px-1 pb-3">
             {TABS.map((t) => {
               const active = tab === t.key;
-              const n = logs?.[t.key].length ?? 0;
+              const n = t.key === 'errors' ? (logs?.errorGroups.length ?? 0) : (logs?.[t.key].length ?? 0);
               return (
                 <button
                   key={t.key}
@@ -279,7 +261,30 @@ export function SystemView() {
               );
             })}
           </div>
-          {!logs ? null : entries.length === 0 ? (
+          {!logs ? null : tab === 'errors' ? (
+            logs.errorGroups.length === 0 ? (
+              <p className="py-6 text-center text-sm text-ink-muted">No errors recorded.</p>
+            ) : (
+              <ol role="tabpanel" className="divide-y divide-line">
+                {logs.errorGroups.map((g, i) => (
+                  <li key={`${g.last}-${i}`} className="py-2.5 text-sm">
+                    <p className="flex flex-wrap items-baseline justify-between gap-x-3">
+                      <span className="font-medium text-ink">
+                        {g.source === 'browser' ? 'In a browser' : 'On the server'}
+                        {g.count > 1 ? ` · ${g.count} times` : ''}
+                      </span>
+                      <span className="text-xs tabular-nums text-ink-muted">
+                        {g.count > 1 ? `${formatTimestamp(g.first)} – ${formatTimestamp(g.last)}` : formatTimestamp(g.last)}
+                      </span>
+                    </p>
+                    <p className="break-words font-mono text-xs text-ink-soft">{g.message}</p>
+                    {g.pages.length > 0 && <p className="break-words text-xs text-ink-muted">Pages: {g.pages.join(', ')}</p>}
+                    {g.people.length > 0 && <p className="break-words text-xs text-ink-muted">Signed in as: {g.people.join(', ')}</p>}
+                  </li>
+                ))}
+              </ol>
+            )
+          ) : entries.length === 0 ? (
             <p className="py-6 text-center text-sm text-ink-muted">Nothing recorded yet.</p>
           ) : (
             <ol role="tabpanel" className="divide-y divide-line">
@@ -297,6 +302,8 @@ export function SystemView() {
             </ol>
           )}
         </SectionCard>
+
+        <AuditPanel accounts={accounts.map((a) => ({ email: a.email, name: a.name }))} />
       </main>
     </div>
   );

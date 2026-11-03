@@ -1,0 +1,6 @@
+[Unit]
+Description=SMART-TB: run a System control request (backup now, restart)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/smarttb-actions

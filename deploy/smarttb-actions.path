@@ -1,0 +1,9 @@
+[Unit]
+Description=SMART-TB: watch for System control requests (backup now, restart)
+
+[Path]
+PathExistsGlob=/opt/smarttb/actions/*.request
+Unit=smarttb-actions.service
+
+[Install]
+WantedBy=multi-user.target

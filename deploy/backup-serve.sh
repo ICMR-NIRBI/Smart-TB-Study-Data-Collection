@@ -6,13 +6,17 @@
 set -euo pipefail
 
 DIR=/opt/smarttb/backups
+# When the PC last checked in and last downloaded, for the health tiles on System control.
+STATE=/var/lib/smarttb-pull
+note() { [[ -d $STATE && -w $STATE ]] && date -u +%FT%TZ >"$STATE/$1" 2>/dev/null; return 0; }
 CMD="${SSH_ORIGINAL_COMMAND:-}"
 CMD="${CMD#sudo }" # the pull script was written for a server where it used sudo; not needed here
 
 if [[ "$CMD" == "find $DIR -maxdepth 1 -name smarttb-\\*.dump.enc -exec stat -c %n,%s {} +" ]]; then
+  note last-list
   exec find "$DIR" -maxdepth 1 -name 'smarttb-*.dump.enc' -exec stat -c %n,%s {} +
 elif [[ "$CMD" =~ ^cat\ (/opt/smarttb/backups/smarttb-(images-)?[0-9]{8}T[0-9]{6}Z\.dump\.enc)$ ]]; then
-  exec cat "${BASH_REMATCH[1]}"
+  cat "${BASH_REMATCH[1]}" && note last-download
 else
   echo "Not allowed: this key can only list and download the SMART-TB backup files." >&2
   exit 1

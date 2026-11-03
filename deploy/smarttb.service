@@ -14,6 +14,10 @@ EnvironmentFile=/opt/smarttb/.env.mongo
 Environment=NODE_ENV=production
 # Module 5 photos (the picture files; the database keeps a record of each)
 Environment=SMARTTB_UPLOAD_DIR=/opt/smarttb/uploads
+# System control: requests to the root helper (backup now, restart), its results, and when the desktop last downloaded
+Environment=SMARTTB_ACTIONS_DIR=/opt/smarttb/actions
+Environment=SMARTTB_ACTIONS_STATUS_DIR=/var/lib/smarttb-actions
+Environment=SMARTTB_PULL_STATE_DIR=/var/lib/smarttb-pull
 # Listens on localhost only; Caddy is the only thing exposed to the internet.
 ExecStart=/usr/bin/node node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000
 Restart=always
@@ -24,7 +28,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/smarttb/app/.next /opt/smarttb/uploads
+ReadWritePaths=/opt/smarttb/app/.next /opt/smarttb/uploads /opt/smarttb/actions
 ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true

@@ -126,6 +126,8 @@ export const SPECS: CollectionSpec[] = [
     indexes: [{ key: { table_name: 1, row_key: 1, at: 1 }, options: { name: 'by_row' } }],
   },
   { name: LOCKS_COLLECTION, privileges: RW },
+  // Site-wide switches set from System control (maintenance mode, the announcement banner); changes are audited.
+  { name: 'app_settings', privileges: RW, audit: { keyFields: ['_id'] } },
   // Failed sign-ins and server errors, for the system control page. The app may only add and read; MongoDB removes
   // entries after a year by itself.
   {

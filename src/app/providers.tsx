@@ -6,6 +6,7 @@ import { Toaster } from 'sonner';
 import { CrfStoreProvider } from '../contexts/CrfStoreContext';
 import { AuthProvider } from '../contexts/AuthContext';
 import { LoadingScreen } from '../components/auth/LoadingScreen';
+import { ErrorReporter } from '../components/system/ErrorReporter';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   // The session and CRF data are fetched in the browser, so render only after mount to avoid hydration mismatches.
@@ -17,6 +18,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <MotionConfig reducedMotion="user">
       <AuthProvider>
         <CrfStoreProvider>
+          <ErrorReporter />
           {children}
           <Toaster position="top-center" richColors closeButton />
         </CrfStoreProvider>

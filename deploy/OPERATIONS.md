@@ -56,6 +56,20 @@ Good result:
 - a backup timer with a next run within the hour
 - the newest backup file less than an hour or two old
 
+## 3a. System control (in the app)
+
+The system administrator (SYSTEM_ADMIN_EMAILS in /opt/smarttb/.env) has a System control page in the account menu. Most problems can be seen and fixed there without logging in to the server:
+
+- Health: database, disk space, database and photo backups, when the desktop last checked in for backups, missing photo files, errors in the last day, locked sign-ins, and the app version. A red or amber tile says what to look at.
+- Server: "Back up now" and "Restart the app". The app cannot run server commands; it leaves a request in /opt/smarttb/actions and a root helper (smarttb-actions.path / smarttb-actions.service, script /usr/local/bin/smarttb-actions) does exactly those two things. Results are in /var/lib/smarttb-actions. If the buttons say the helper is missing, deploy again (deploy.sh installs it).
+- Maintenance mode: nobody but the system administrator can save; everyone can still read and sees a notice. Use it while restoring a backup or fixing data. Turn it off afterwards.
+- Announcement: a banner for everyone signed in, for a few hours or until removed.
+- Account rescue: unlock a sign-in locked after wrong passwords; sign someone out on every device (a lost phone). Set a password for any account.
+- Logs: sign-ins, failed sign-ins, account changes, and errors (server and staff browsers, grouped with how often, on which page, for whom).
+- Audit trail: search by participant ID, staff account and dates; download as CSV.
+
+Every action there needs a reason and is kept in the audit trail. Restoring a backup is deliberately not possible from the app: do it on the server (section 6).
+
 ## 4. Something is wrong: find the cause
 
 ### The website does not open at all
