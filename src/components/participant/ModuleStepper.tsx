@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { CheckIcon, LockIcon } from 'lucide-react';
 import { MODULES } from '../../data/modules';
 import { getAccess, isPreviewOnly, lockReason } from '../../utils/gating';
+import { usePreviewMode } from '../../hooks/usePreviewMode';
 import { formatTimestamp } from '../../utils/dates';
 import type { ModuleAccess, ModuleId, Participant } from '../../types/crf';
 
@@ -48,7 +49,8 @@ export function ModuleStepper({ participant, selected, onSelect, orientation }: 
     list.scrollTo({ left: el.offsetLeft - list.clientWidth / 2 + el.clientWidth / 2, behavior: 'smooth' });
   }, [selected, orientation]);
 
-  const items = MODULES.map((m) => ({ m, access: getAccess(participant, m.id) }));
+  const preview = usePreviewMode();
+  const items = MODULES.map((m) => ({ m, access: getAccess(participant, m.id, preview) }));
 
   if (orientation === 'horizontal') {
     return (

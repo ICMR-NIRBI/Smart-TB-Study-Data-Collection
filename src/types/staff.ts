@@ -25,6 +25,8 @@ export interface StaffMember {
   mustChangePassword: boolean;
   lastSignInAt: string;
   createdAt: string;
+  /** Set while the role cannot be changed again (cooldown after a change); '' otherwise. */
+  roleLockedUntil: string;
   delegations: Delegation[];
 }
 

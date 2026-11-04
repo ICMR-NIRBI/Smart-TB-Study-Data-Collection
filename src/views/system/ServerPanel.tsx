@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { DatabaseBackupIcon, Loader2Icon, MegaphoneIcon, RotateCwIcon, WrenchIcon } from 'lucide-react';
+import { DatabaseBackupIcon, EyeIcon, Loader2Icon, MegaphoneIcon, RotateCwIcon, WrenchIcon } from 'lucide-react';
+import { setDemoMode } from '../../hooks/usePreviewMode';
 import { SectionCard } from '../../components/ui/SectionCard';
 import { Button } from '../../components/ui/Button';
 import { Alert } from '../../components/ui/Alert';
@@ -22,6 +23,7 @@ export interface ServerActionsStatus {
 export interface SiteSettings {
   maintenance: { on: boolean; message: string; since: string | null; by: string };
   announcement: { text: string; tone: 'info' | 'warn'; until: string | null; by: string } | null;
+  demo: { on: boolean; since: string | null; by: string };
 }
 
 const fieldCls =
@@ -93,7 +95,7 @@ function ActionRow({ state, available, onDone }: { state: ActionState; available
   );
 }
 
-/** Server actions, maintenance mode and the announcement banner. */
+/** Server actions, maintenance mode, demo mode and the announcement banner. */
 export function ServerPanel({
   actions,
   site,
@@ -114,6 +116,22 @@ export function ServerPanel({
   const [aHours, setAHours] = useState('24');
   const [aBusy, setABusy] = useState(false);
   const [aError, setAError] = useState<string | null>(null);
+  const [dBusy, setDBusy] = useState(false);
+  const [dError, setDError] = useState<string | null>(null);
+
+  const demo = async (on: boolean) => {
+    setDBusy(true);
+    setDError(null);
+    try {
+      const next = await api<SiteSettings>('/api/system/site', { method: 'POST', body: { kind: 'demo', on } });
+      onSite(next);
+      setDemoMode(next.demo.on);
+    } catch (err) {
+      setDError(err instanceof Error ? err.message : 'Could not change demo mode');
+    } finally {
+      setDBusy(false);
+    }
+  };
 
   const maintenance = async (on: boolean) => {
     if (mReason.trim().length < MIN_ADMIN_REASON_LENGTH || mBusy) {
@@ -146,7 +164,7 @@ export function ServerPanel({
   };
 
   return (
-    <SectionCard title="Server" subtitle="Backups, restarts, maintenance mode and announcements. Every action is recorded with your reason.">
+    <SectionCard title="Server" subtitle="Backups, restarts, maintenance mode, demo mode and announcements. Every action is recorded in the audit trail.">
       <div className="space-y-4">
         {actions && !actions.available && (
           <Alert tone="info" title="Backup now and Restart are installed with the next deployment">
@@ -183,6 +201,34 @@ export function ServerPanel({
               {site?.maintenance.on ? 'Turn maintenance off' : 'Turn maintenance on'}
             </Button>
           </div>
+        </div>
+
+        <div className={`rounded-xl border p-3 ${site?.demo.on ? 'border-brand-200 bg-brand-50' : 'border-line'}`}>
+          <div className="flex flex-wrap items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="flex items-center gap-2 font-semibold text-ink">
+                <EyeIcon className="h-4 w-4 text-ink-muted" aria-hidden="true" /> Demo mode: open all modules{' '}
+                <span className={`rounded-full px-2 py-0.5 text-xs ${site?.demo.on ? 'bg-brand-600 text-white' : 'bg-canvas text-ink-muted'}`}>{site?.demo.on ? 'On' : 'Off'}</span>
+              </p>
+              <p className="text-sm text-ink-muted">
+                For a demonstration: every account sees all 10 modules unlocked, with Previous / Next through them. Saving and locking still follow each role and the module order, so real records are safe.
+              </p>
+              {site?.demo.on && site.demo.since && (
+                <p className="mt-1 text-sm text-brand-800">
+                  On since {formatTimestamp(site.demo.since)} ({site.demo.by}). Turn it off after the demo.
+                </p>
+              )}
+            </div>
+            <Button
+              variant={site?.demo.on ? 'primary' : 'secondary'}
+              icon={dBusy ? <Loader2Icon className="h-4 w-4 animate-spin" aria-hidden="true" /> : <EyeIcon className="h-4 w-4" aria-hidden="true" />}
+              onClick={() => void demo(!site?.demo.on)}
+              disabled={dBusy || !site}
+            >
+              {site?.demo.on ? 'Turn demo mode off' : 'Open all modules'}
+            </Button>
+          </div>
+          {dError && <div className="mt-3"><Alert tone="danger" title={dError} /></div>}
         </div>
 
         <div className="rounded-xl border border-line p-3">

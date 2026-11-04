@@ -5,7 +5,9 @@ import { requireReason } from './staff';
 /*
  * Site-wide switches the system administrator sets from System control:
  *  - maintenance mode: data entry is paused for everyone except the system administrator (reading still works);
- *  - an announcement banner shown to everyone signed in (for example "Server maintenance at 18:00").
+ *  - an announcement banner shown to everyone signed in (for example "Server maintenance at 18:00");
+ *  - demo mode: every module is shown open, with Previous / Next through all ten, for a demonstration (display only;
+ *    what can be saved or locked does not change).
  * One document, `app_settings/site`; every change is in the audit trail with its reason.
  */
 
@@ -15,6 +17,7 @@ const SITE_ID = 'site';
 export interface SiteSettings {
   maintenance: { on: boolean; message: string; since: string | null; by: string };
   announcement: { text: string; tone: 'info' | 'warn'; until: string | null; by: string } | null;
+  demo: { on: boolean; since: string | null; by: string };
 }
 
 interface SiteDoc {
@@ -27,9 +30,12 @@ interface SiteDoc {
   announcement_tone: 'info' | 'warn';
   announcement_until: Date | null;
   announcement_by: string;
+  demo_on?: boolean;
+  demo_since?: Date | null;
+  demo_by?: string;
 }
 
-const EMPTY: SiteSettings = { maintenance: { on: false, message: '', since: null, by: '' }, announcement: null };
+const EMPTY: SiteSettings = { maintenance: { on: false, message: '', since: null, by: '' }, announcement: null, demo: { on: false, since: null, by: '' } };
 
 function toSettings(d: SiteDoc | null): SiteSettings {
   if (!d) return EMPTY;
@@ -37,6 +43,7 @@ function toSettings(d: SiteDoc | null): SiteSettings {
   return {
     maintenance: { on: !!d.maintenance_on, message: d.maintenance_message ?? '', since: d.maintenance_since?.toISOString() ?? null, by: d.maintenance_by ?? '' },
     announcement: live ? { text: d.announcement_text, tone: d.announcement_tone ?? 'info', until: d.announcement_until?.toISOString() ?? null, by: d.announcement_by ?? '' } : null,
+    demo: { on: !!d.demo_on, since: d.demo_since?.toISOString() ?? null, by: d.demo_by ?? '' },
   };
 }
 
@@ -85,5 +92,12 @@ export async function setAnnouncement(tx: Tx, actor: { name: string }, body: Rec
     announcement_until: text && hours > 0 ? new Date(Date.now() + hours * 3600 * 1000) : null,
     announcement_by: text ? actor.name : '',
   });
+  return readSiteSettings(tx);
+}
+
+/** Demo mode on or off: one button on System control. */
+export async function setDemo(tx: Tx, actor: { name: string }, body: Record<string, unknown>): Promise<SiteSettings> {
+  const on = body.on === true;
+  await save(tx, { demo_on: on, demo_since: on ? new Date() : null, demo_by: on ? actor.name : '' });
   return readSiteSettings(tx);
 }

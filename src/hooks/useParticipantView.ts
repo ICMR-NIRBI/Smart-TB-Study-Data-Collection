@@ -5,6 +5,8 @@ import { useCrfStore } from '../contexts/CrfStoreContext';
 import { canCompleteModule, canDiscontinue, canEnterModule, canReopenModule } from '../data/roles';
 import { evaluateEligibility } from '../utils/clinical';
 import { getAccess, getCurrentModule, isIneligible, isPreviewOnly, isRecordLocked } from '../utils/gating';
+import { PREVIEW_MODE } from '../data/previewMode';
+import { usePreviewMode } from './usePreviewMode';
 import { validateModule } from '../utils/validation';
 import type { CrfData, M10Reason, ModuleId, ModuleKey } from '../types/crf';
 
@@ -36,7 +38,8 @@ export function useParticipantView(uid: string) {
   const requested = Number(params.get('m'));
   // Every role can open every module to read it; what a role may fill in is decided separately (canEnter) and by the server.
   const selected: ModuleId = participant && isModuleId(requested) ? requested : current;
-  const access = participant ? getAccess(participant, selected) : 'locked';
+  const preview = usePreviewMode();
+  const access = participant ? getAccess(participant, selected, preview) : 'locked';
   const meta = participant?.meta[selected];
   const editing = !!meta?.editing;
   const recordLocked = participant ? isRecordLocked(participant) : false;
@@ -44,7 +47,8 @@ export function useParticipantView(uid: string) {
   const canReopen = canReopenModule(actor, selected);
   const canEnter = canEnterModule(actor, selected) || (editing && canReopen);
   const canComplete = canCompleteModule(actor, selected) || (editing && canReopen);
-  const readOnly = access === 'locked' || (access === 'complete' && !editing) || (previewOnly && recordLocked) || !canEnter;
+  // Demo mode only shows later modules; filling them in ahead of their turn needs a preview build (the server agrees).
+  const readOnly = access === 'locked' || (access === 'complete' && !editing) || (previewOnly && (recordLocked || !PREVIEW_MODE)) || !canEnter;
 
   const errors = useMemo(() => (participant ? validateModule(selected, participant) : {}), [participant, selected]);
   const errorCount = Object.keys(errors).length;
@@ -141,6 +145,7 @@ export function useParticipantView(uid: string) {
     editing,
     readOnly,
     previewOnly,
+    preview,
     prevModule,
     nextModule,
     recordLocked,

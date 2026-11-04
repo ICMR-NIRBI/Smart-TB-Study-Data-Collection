@@ -1,4 +1,4 @@
-// System control tools: health, server actions, maintenance mode, announcements, account rescue, browser errors and
+// System control tools: health, server actions, maintenance mode, announcements, demo mode, role changes, account rescue, browser errors and
 // the audit search. The test server names sysadmin-e2e@smarttb.study in SYSTEM_ADMIN_EMAILS (see run-all.mjs).
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -160,6 +160,40 @@ try {
   check('errors are grouped: one line, how often, where and for whom', group?.source === 'browser' && group.count === 2 && group.pages.includes('/p/test') && group.people.includes(piEmail), JSON.stringify(group));
   check('health counts errors in the last day', r.json.health.checks.some((c) => c.key === 'errors' && c.state === 'warn'));
 
+  // --- one-click role change, with a cooldown per account
+  r = await sys('/api/system');
+  check('accounts come with their role key and the role list', r.json.accounts.some((a) => a.id === targetId && a.role === 'research_officer' && a.roleLockedUntil === '') && r.json.roles.some((x) => x.key === 'phlebotomist') && r.json.roleCooldownMinutes === 15, JSON.stringify(r.json.roles));
+  r = await pi('/api/system/accounts', { method: 'POST', body: { userId: targetId, action: 'role', role: 'phlebotomist' } });
+  check('the PI cannot change roles from System control', r.status === 403, `${r.status}`);
+  r = await sys('/api/system/accounts', { method: 'POST', body: { userId: targetId, action: 'role', role: 'no_such_role' } });
+  check('an unknown role is refused', r.status === 400, `${r.status}`);
+  r = await sys('/api/system/accounts', { method: 'POST', body: { userId: targetId, action: 'role', role: 'phlebotomist' } });
+  check('one click changes the role', r.status === 200 && r.json.role === 'phlebotomist' && !!r.json.roleLockedUntil, `${r.status} ${JSON.stringify(r.json)}`);
+  check('it is saved', (await db.user(targetEmail))?.role === 'phlebotomist');
+  r = await sys('/api/system/accounts', { method: 'POST', body: { userId: targetId, action: 'role', role: 'research_officer' } });
+  check('changing it straight back is refused during the cooldown', r.status === 409 && /15 minutes/.test(r.json.error ?? ''), `${r.status} ${JSON.stringify(r.json)}`);
+  r = await pi(`/api/admin/staff/${targetId}`, { method: 'PATCH', body: { role: 'research_officer', reason: 'Testing the cooldown' } });
+  check('the staff page honours the same cooldown', r.status === 409, `${r.status} ${JSON.stringify(r.json)}`);
+  r = await pi(`/api/admin/staff/${targetId}`, { method: 'PATCH', body: { name: 'Target Person B', reason: 'Testing the cooldown' } });
+  check('but other changes to the account still work', r.status === 200, `${r.status} ${JSON.stringify(r.json).slice(0, 120)}`);
+  const sysId = (await db.user(SYS)).id;
+  r = await sys('/api/system/accounts', { method: 'POST', body: { userId: sysId, action: 'role', role: 'pi' } });
+  check('you cannot change your own role', r.status === 409, `${r.status}`);
+  check('the change is in the audit trail', (await db.audit('app_users', targetId)).some((a) => a.reason === 'Role changed from System control'));
+
+  // --- demo mode: every module shown open; saving rules do not change
+  r = await sys('/api/system/site', { method: 'POST', body: { kind: 'demo', on: true } });
+  check('demo mode turns on with one click', r.status === 200 && r.json.demo?.on === true && !!r.json.demo.since, `${r.status} ${JSON.stringify(r.json)}`);
+  check('every signed-in account is told', (await pi('/api/site')).json.demo === true);
+  check('but not signed-out visitors', (await client()('/api/site')).json.demo === false);
+  await new Promise((res) => setTimeout(res, 5500));
+  r = await pi(`/api/participants/${uid}/modules/3`, { method: 'PATCH', body: { patch: {} } });
+  check('modules out of turn still cannot be saved in demo mode', r.status === 409, `${r.status} ${JSON.stringify(r.json)}`);
+  r = await pi('/api/system/site', { method: 'POST', body: { kind: 'demo', on: false } });
+  check('only the system administrator can switch it', r.status === 403, `${r.status}`);
+  r = await sys('/api/system/site', { method: 'POST', body: { kind: 'demo', on: false } });
+  check('demo mode turns off', r.status === 200 && r.json.demo?.on === false && (await pi('/api/site')).json.demo === false, `${r.status}`);
+
   // --- audit search
   r = await sys(`/api/system/audit?account=${encodeURIComponent(targetEmail)}`);
   check('the audit trail can be searched by account', r.status === 200 && r.json.rows.some((x) => /Staff account/.test(x.what) && x.reason === 'Phone lost on the ward'), `${r.status} ${JSON.stringify(r.json).slice(0, 200)}`);
@@ -178,6 +212,7 @@ try {
   // Never leave the test server in maintenance mode or with a banner, whatever happened above.
   await sys('/api/system/site', { method: 'POST', body: { kind: 'maintenance', on: false, reason: 'End of the test run' } });
   await sys('/api/system/site', { method: 'POST', body: { kind: 'announcement', text: '' } });
+  await sys('/api/system/site', { method: 'POST', body: { kind: 'demo', on: false } });
   rmSync(join(actionsDir, 'backup.request'), { force: true });
   rmSync(join(statusDir, 'backup.json'), { force: true });
   rmSync(join(statusDir, 'installed'), { force: true });

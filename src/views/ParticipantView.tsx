@@ -89,6 +89,7 @@ export function ParticipantView({ uid }: { uid: string }) {
             errorCount={view.errorCount}
             attempted={view.isAttempted}
             previewOnly={view.previewOnly}
+            preview={view.preview}
             canEnter={view.canEnter}
             canComplete={view.canComplete}
             canReopen={view.canReopen}

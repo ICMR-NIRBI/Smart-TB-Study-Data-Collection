@@ -1,12 +1,13 @@
 import { apiHandler, readJson } from '../../../../server/http';
 import { ApiError } from '../../../../server/errors';
 import { withTransaction } from '../../../../server/mongo/tx';
-import { setAnnouncement, setMaintenance } from '../../../../server/siteSettings';
+import { setAnnouncement, setDemo, setMaintenance } from '../../../../server/siteSettings';
 import { assertSystemAdmin } from '../../../../server/system';
 
 /**
  * Maintenance mode: `{ kind: 'maintenance', on, message, reason }`.
  * Announcement banner: `{ kind: 'announcement', text, tone: 'info' | 'warn', hours }` (empty text clears it).
+ * Demo mode (every module shown open): `{ kind: 'demo', on }`.
  */
 export async function POST(req: Request) {
   return apiHandler(
@@ -18,6 +19,9 @@ export async function POST(req: Request) {
       }
       if (body.kind === 'announcement') {
         return withTransaction({ userId: user.id, reason: 'Announcement banner' }, (tx) => setAnnouncement(tx, user, body));
+      }
+      if (body.kind === 'demo') {
+        return withTransaction({ userId: user.id, reason: body.on === true ? 'Demo mode on: all modules open' : 'Demo mode off' }, (tx) => setDemo(tx, user, body));
       }
       throw new ApiError(400, 'Unknown setting');
     },

@@ -39,9 +39,10 @@ export function isPreviewOnly(p: Participant, id: ModuleId): boolean {
   return strictAccess(p, id) === 'locked';
 }
 
-export function getAccess(p: Participant, id: ModuleId): ModuleAccess {
+/** `preview`: show locked modules as open (preview builds, or demo mode on the page). The server always uses the build flag. */
+export function getAccess(p: Participant, id: ModuleId, preview: boolean = PREVIEW_MODE): ModuleAccess {
   const access = strictAccess(p, id);
-  return PREVIEW_MODE && access === 'locked' ? 'open' : access;
+  return preview && access === 'locked' ? 'open' : access;
 }
 
 export function getStatus(p: Participant): ParticipantStatus {

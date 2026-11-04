@@ -12,6 +12,9 @@ import type { Delegation, SetupLink, StaffHistoryEntry, StaffMember } from '../t
 
 const SETUP_LINK_HOURS = 72;
 
+/** After an account's role changes, it stays as it is for this long, so roles are not flipped back and forth by mistake. */
+export const ROLE_COOLDOWN_MINUTES = 15;
+
 export interface AdminActor {
   id: string;
   isAdmin: boolean;
@@ -68,6 +71,7 @@ interface UserDoc {
   must_change_password: boolean;
   last_sign_in_at: Date | null;
   created_at: Date;
+  role_changed_at?: Date | null;
 }
 
 interface DelegationDoc {
@@ -97,6 +101,7 @@ export async function listStaff(q: Reads): Promise<StaffMember[]> {
     mustChangePassword: u.must_change_password === true,
     lastSignInAt: u.last_sign_in_at?.toISOString() ?? '',
     createdAt: u.created_at.toISOString(),
+    roleLockedUntil: roleLockedUntil(u.role_changed_at)?.toISOString() ?? '',
     delegations: dels
       .filter((d) => d.user_id === u._id)
       .map<Delegation>((d) => ({
@@ -107,6 +112,36 @@ export async function listStaff(q: Reads): Promise<StaffMember[]> {
         grantedBy: (d.granted_by && names.get(d.granted_by)) || '',
       })),
   }));
+}
+
+function roleLockedUntil(changedAt: Date | null | undefined): Date | null {
+  if (!changedAt) return null;
+  const until = new Date(changedAt.getTime() + ROLE_COOLDOWN_MINUTES * 60_000);
+  return until.getTime() > Date.now() ? until : null;
+}
+
+/** Refuses a role change while the account's last one is under ROLE_COOLDOWN_MINUTES old. */
+function assertRoleCooledDown(member: StaffMember) {
+  if (!member.roleLockedUntil) return;
+  const minutes = Math.max(1, Math.ceil((new Date(member.roleLockedUntil).getTime() - Date.now()) / 60_000));
+  throw new ApiError(409, `This account's role was changed less than ${ROLE_COOLDOWN_MINUTES} minutes ago. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`);
+}
+
+/**
+ * The one-click role change on System control (the system administrator, who need not be a study administrator).
+ * Same rules as the staff page: not your own role, and not again within the cooldown.
+ */
+export async function changeRole(tx: Tx, actor: { id: string }, id: string, rawRole: unknown): Promise<StaffMember> {
+  await lockUser(tx, id);
+  const current = await getStaff(tx, id);
+  if (id === actor.id) throw new ApiError(409, 'Ask the other administrator to change your own role');
+  if (current.status === 'deactivated') throw new ApiError(409, 'Reactivate this account before changing its role');
+  const role = await cleanRole(tx, rawRole);
+  if (role === current.role) return current;
+  assertRoleCooledDown(current);
+  const now = new Date();
+  await tx.updateOne('app_users', { _id: id as never }, { $set: { role, role_changed_at: now, updated_at: now, updated_by: actor.id } });
+  return getStaff(tx, id);
 }
 
 async function getStaff(q: Reads, id: string): Promise<StaffMember> {
@@ -273,8 +308,13 @@ export async function updateStaff(tx: Tx, admin: AdminActor, id: string, body: R
   if (self && role !== current.role) throw new ApiError(409, 'Ask the other administrator to change your own role');
   if (self && !isAdmin) throw new ApiError(409, 'You cannot remove your own administrator rights');
   if (current.isAdmin && !isAdmin && current.status !== 'deactivated') await assertAnotherAdmin(tx, id);
+  const roleChanged = role !== current.role;
+  if (roleChanged) assertRoleCooledDown(current);
 
-  await tx.updateOne('app_users', { _id: id as never }, { $set: { display_name: name, role, is_admin: isAdmin, updated_at: new Date(), updated_by: admin.id } });
+  const now = new Date();
+  await tx.updateOne('app_users', { _id: id as never }, {
+    $set: { display_name: name, role, is_admin: isAdmin, updated_at: now, updated_by: admin.id, ...(roleChanged ? { role_changed_at: now } : {}) },
+  });
   return getStaff(tx, id);
 }
 

@@ -46,7 +46,7 @@ export const SPECS: CollectionSpec[] = [
   {
     name: 'app_users',
     privileges: [...RW, 'remove'],
-    audit: { keyFields: ['_id'], secret: ['password_hash'], noise: ['updated_at', 'updated_by', 'last_sign_in_at'] },
+    audit: { keyFields: ['_id'], secret: ['password_hash'], noise: ['updated_at', 'updated_by', 'last_sign_in_at', 'role_changed_at'] },
     indexes: [
       { key: { email: 1 }, options: { name: 'email_unique', unique: true } },
       { key: { external_uid: 1 }, options: { name: 'external_uid_unique', unique: true, partialFilterExpression: { external_uid: { $type: 'string' } } } },

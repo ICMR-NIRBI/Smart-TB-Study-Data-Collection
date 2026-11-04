@@ -1,7 +1,6 @@
 import React from 'react';
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, EyeIcon, Loader2Icon, LockIcon, PencilIcon, SaveIcon } from 'lucide-react';
 import { Button } from '../ui/Button';
-import { PREVIEW_MODE } from '../../data/previewMode';
 import type { ModuleAccess, ModuleId } from '../../types/crf';
 
 interface ModuleActionBarProps {
@@ -13,6 +12,8 @@ interface ModuleActionBarProps {
   attempted: boolean;
   /** Module cannot be filled in yet; it can still be opened to read. */
   previewOnly?: boolean;
+  /** Preview build or demo mode: show Previous / Next through all modules. */
+  preview?: boolean;
   /** The signed-in role may fill in this module. */
   canEnter: boolean;
   /** The signed-in role may lock (sign off) this module. */
@@ -32,8 +33,8 @@ interface ModuleActionBarProps {
   onEdit: () => void;
 }
 
-function PreviewNav({ moduleId, onPrev, onNext }: Pick<ModuleActionBarProps, 'moduleId' | 'onPrev' | 'onNext'>) {
-  if (!PREVIEW_MODE) return null;
+function PreviewNav({ moduleId, preview, onPrev, onNext }: Pick<ModuleActionBarProps, 'moduleId' | 'preview' | 'onPrev' | 'onNext'>) {
+  if (!preview) return null;
   const btn =
     'flex min-h-[44px] items-center gap-1 rounded-lg px-2 text-sm font-semibold text-brand-700 transition-colors duration-150 hover:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 disabled:cursor-not-allowed disabled:text-lock-300 disabled:hover:bg-transparent';
   return (
@@ -44,7 +45,7 @@ function PreviewNav({ moduleId, onPrev, onNext }: Pick<ModuleActionBarProps, 'mo
       </button>
       <span className="flex items-center gap-1 text-xs font-medium text-ink-muted">
         <EyeIcon className="h-3.5 w-3.5" aria-hidden="true" />
-        Preview mode
+        All modules open
       </span>
       <button type="button" className={btn} onClick={onNext} disabled={!onNext}>
         {moduleId < 10 ? `Module ${moduleId + 1}` : 'Next'}
@@ -62,6 +63,7 @@ export function ModuleActionBar({
   errorCount,
   attempted,
   previewOnly,
+  preview,
   canEnter,
   canComplete,
   canReopen,
@@ -76,7 +78,7 @@ export function ModuleActionBar({
   onEdit,
 }: ModuleActionBarProps) {
   const wrapper = 'sticky bottom-0 z-20 border-t border-line bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:px-0';
-  const nav = <PreviewNav moduleId={moduleId} onPrev={onPrev} onNext={onNext} />;
+  const nav = <PreviewNav moduleId={moduleId} preview={preview} onPrev={onPrev} onNext={onNext} />;
 
   if (access === 'complete' && !editing) {
     return (

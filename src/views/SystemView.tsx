@@ -14,13 +14,16 @@ import { MIN_ADMIN_REASON_LENGTH, generateTemporaryPassword, passwordProblem } f
 import { HealthPanel, type Health } from './system/HealthPanel';
 import { ServerPanel, type ServerActionsStatus, type SiteSettings } from './system/ServerPanel';
 import { RescuePanel } from './system/RescuePanel';
+import { RolesPanel, type RoleChoice } from './system/RolesPanel';
 import { AuditPanel } from './system/AuditPanel';
 
 interface Account {
   id: string;
   name: string;
   email: string;
+  role: string;
   roleLabel: string;
+  roleLockedUntil: string;
   status: 'invited' | 'active' | 'deactivated';
   isSelf: boolean;
 }
@@ -69,6 +72,8 @@ export function SystemView() {
   const [actions, setActions] = useState<ServerActionsStatus | null>(null);
   const [site, setSite] = useState<SiteSettings | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [roles, setRoles] = useState<RoleChoice[]>([]);
+  const [cooldown, setCooldown] = useState(15);
   const [logs, setLogs] = useState<Logs | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -86,11 +91,13 @@ export function SystemView() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api<{ health: Health; actions: ServerActionsStatus; site: SiteSettings; accounts: Account[]; logs: Logs }>('/api/system');
+      const res = await api<{ health: Health; actions: ServerActionsStatus; site: SiteSettings; accounts: Account[]; roles: RoleChoice[]; roleCooldownMinutes: number; logs: Logs }>('/api/system');
       setHealth(res.health);
       setActions(res.actions);
       setSite(res.site);
       setAccounts(res.accounts);
+      setRoles(res.roles);
+      setCooldown(res.roleCooldownMinutes);
       setLogs(res.logs);
       setLoadError(null);
     } catch (err) {
@@ -173,6 +180,7 @@ export function SystemView() {
 
         <HealthPanel health={health} />
         <ServerPanel actions={actions} site={site} onActions={setActions} onSite={setSite} />
+        <RolesPanel accounts={accounts} roles={roles} cooldown={cooldown} onChanged={() => void load()} />
         <RescuePanel accounts={accounts} onChanged={() => void load()} />
 
         <SectionCard title="Set a password for an account" subtitle="For when someone cannot use Reset password, or an account needs a known password.">
