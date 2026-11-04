@@ -17,7 +17,7 @@ function Indicator({ access, id }: { access: ModuleAccess; id: number }) {
   const base = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold tabular-nums';
   if (access === 'complete')
     return (
-      <span className={`${base} bg-ok-600 text-white`}>
+      <span className={`${base} bg-ok-600 text-white motion-safe:animate-pop`}>
         <CheckIcon className="h-4 w-4" strokeWidth={3} aria-hidden="true" />
       </span>
     );
@@ -77,7 +77,7 @@ export function ModuleStepper({ participant, selected, onSelect, orientation }: 
                         : 'border-line bg-white text-ink-soft hover:border-line-strong'
                   }`}
                 >
-                  <Indicator access={access} id={m.id} />
+                  <Indicator key={access} access={access} id={m.id} />
                   {m.step}
                 </button>
               </li>
@@ -111,7 +111,7 @@ export function ModuleStepper({ participant, selected, onSelect, orientation }: 
                   isSel ? 'bg-white shadow-sm ring-1 ring-brand-200' : 'hover:bg-white'
                 }`}
               >
-                <Indicator access={access} id={m.id} />
+                <Indicator key={access} access={access} id={m.id} />
                 <span className="min-w-0">
                   <span className={`block truncate text-sm font-semibold ${locked ? 'text-lock-500' : isSel ? 'text-brand-800' : 'text-ink'}`}>
                     {m.id}. {m.short}

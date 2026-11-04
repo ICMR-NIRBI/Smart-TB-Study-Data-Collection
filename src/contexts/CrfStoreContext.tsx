@@ -6,6 +6,7 @@ import { useAuth } from './AuthContext';
 import { api, ApiRequestError } from '../utils/api';
 import type { Actor } from '../data/roles';
 import type { CrfData, M10Reason, ModuleId, ModuleKey, Participant, StaffUser } from '../types/crf';
+import { useLiveSync, type LiveChange, type LiveEditor, type LiveStatus } from './useLiveSync';
 
 /** Field edits are batched per module and sent this long after the last keystroke. */
 const SAVE_DELAY_MS = 600;
@@ -27,6 +28,12 @@ interface CrfStore {
   completeModule: (uid: string, id: ModuleId) => Promise<ActionResult>;
   requestEdit: (uid: string, id: ModuleId, reason: string) => Promise<ActionResult>;
   discontinue: (uid: string, reason: M10Reason) => Promise<ActionResult>;
+  /** Live channel: whether other people's changes arrive instantly ('live') or by checking every 30 s ('polling'). */
+  liveStatus: LiveStatus;
+  /** The latest change per participant seen on the live channel (for a brief highlight on the dashboard). */
+  changes: Record<string, LiveChange>;
+  /** Who has which module of a participant open right now (others only). */
+  editors: Record<string, LiveEditor[]>;
 }
 
 const CrfStoreContext = createContext<CrfStore | null>(null);
@@ -48,24 +55,43 @@ export function CrfStoreProvider({ children }: { children: React.ReactNode }) {
   const [saving, setSaving] = useState(false);
 
   const pending = useRef(new Map<string, Record<string, unknown>>());
+  /** Edits on their way to the server: kept on screen when a fresh copy of the record arrives before they land. */
+  const inflight = useRef(new Map<string, Record<string, unknown>>());
+  /** What this screen last saved per module and when, to notice someone else overwriting it. */
+  const lastSent = useRef(new Map<string, { fields: Record<string, unknown>; at: number }>());
   const chains = useRef(new Map<string, Promise<void>>());
   const timer = useRef<number | null>(null);
 
-  const replace = useCallback((next: Participant) => {
-    setParticipants((prev) => (prev.some((p) => p.uid === next.uid) ? prev.map((p) => (p.uid === next.uid ? next : p)) : [next, ...prev]));
+  /** A fresh record from the server, with this screen's unsaved and in-flight edits laid back on top. */
+  const overlay = useCallback((p: Participant): Participant => {
+    let data = p.data;
+    for (const store of [inflight.current, pending.current]) {
+      for (const [key, patch] of store) {
+        const [uid, id] = key.split('|');
+        if (uid !== p.uid) continue;
+        const k = `m${id}` as ModuleKey;
+        data = { ...data, [k]: { ...data[k], ...patch } } as CrfData;
+      }
+    }
+    return data === p.data ? p : { ...p, data };
   }, []);
+
+  const replace = useCallback((raw: Participant) => {
+    const next = overlay(raw);
+    setParticipants((prev) => (prev.some((p) => p.uid === next.uid) ? prev.map((p) => (p.uid === next.uid ? next : p)) : [next, ...prev]));
+  }, [overlay]);
 
   const reload = useCallback(async () => {
     try {
       const { participants: list } = await api<{ participants: Participant[] }>('/api/participants');
-      setParticipants(list);
+      setParticipants(list.map(overlay));
       setLoadError(null);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Could not load participants');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [overlay]);
 
   const reloadOne = useCallback(
     async (uid: string) => {
@@ -98,14 +124,22 @@ export function CrfStoreProvider({ children }: { children: React.ReactNode }) {
       if (!patch) return chains.current.get(key) ?? Promise.resolve();
       pending.current.delete(key);
       const [uid, id] = key.split('|');
+      inflight.current.set(key, { ...(inflight.current.get(key) ?? {}), ...patch });
       const run = (chains.current.get(key) ?? Promise.resolve())
         .then(() => api(`/api/participants/${encodeURIComponent(uid)}/modules/${id}`, { method: 'PATCH', body: { patch } }))
-        .then(() => undefined)
+        .then(() => {
+          lastSent.current.set(key, { fields: { ...(lastSent.current.get(key)?.fields ?? {}), ...patch }, at: Date.now() });
+        })
         .catch((err: unknown) => {
           toast.error('Change not saved', { description: err instanceof Error ? err.message : undefined });
           void reloadOne(uid);
         })
         .finally(() => {
+          const flying = inflight.current.get(key);
+          if (flying) {
+            for (const f of Object.keys(patch)) if (flying[f] === patch[f]) delete flying[f];
+            if (!Object.keys(flying).length) inflight.current.delete(key);
+          }
           if (chains.current.get(key) === run) chains.current.delete(key);
           refreshSaving();
         });
@@ -203,6 +237,8 @@ export function CrfStoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, [replace]);
 
+  const live = useLiveSync({ session, reload, overlay, setParticipants, lastSent, pending, inflight });
+
   const value = useMemo<CrfStore>(
     () => ({
       participants,
@@ -218,8 +254,11 @@ export function CrfStoreProvider({ children }: { children: React.ReactNode }) {
       completeModule,
       requestEdit,
       discontinue,
+      liveStatus: live.status,
+      changes: live.changes,
+      editors: live.editors,
     }),
-    [participants, loading, loadError, saving, session, reload, enroll, updateModuleData, saveDraft, completeModule, requestEdit, discontinue],
+    [participants, loading, loadError, saving, session, reload, enroll, updateModuleData, saveDraft, completeModule, requestEdit, discontinue, live],
   );
 
   return <CrfStoreContext.Provider value={value}>{children}</CrfStoreContext.Provider>;

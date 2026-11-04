@@ -228,6 +228,7 @@ export async function createParticipant(tx: Tx, user: ActingUser): Promise<Parti
     await tx.insertOne('crf_modules', newModuleDoc(uid, id, data, user.id, now));
   }
   await writeContacts(tx, uid, user.id, { phone: '', address: '' });
+  tx.notify({ type: 'participant', uid, kind: 'created' });
   return loadOne(tx, user, uid);
 }
 
@@ -267,6 +268,7 @@ export async function assertModuleEditable(tx: Tx, user: ActingUser, uid: string
 }
 
 async function touch(tx: Tx, uid: string) {
+  tx.notify({ type: 'participant', uid, kind: 'changed' });
   await tx.updateOne('participants', { _id: uid as never }, { $set: { updated_at: new Date() } });
 }
 
@@ -275,6 +277,7 @@ const moduleId = (uid: string, id: ModuleId) => `${uid}:${id}` as never;
 export async function patchModule(tx: Tx, user: ActingUser, uid: string, id: ModuleId, rawPatch: unknown): Promise<void> {
   const p = await loadForUpdate(tx, uid);
   assertEditable(p, user, id);
+  tx.notify({ type: 'participant', uid, module: id, kind: 'changed' });
   const patch = sanitizePatch(id, rawPatch);
 
   if (id === 1) {
@@ -364,6 +367,7 @@ export async function completeModule(tx: Tx, user: ActingUser, uid: string, id: 
   if (id === 2 && evaluateEligibility(p.data.m2).eligible === false) {
     await tx.updateOne('crf_modules', { _id: moduleId(uid, 10) }, { $set: { 'data.status': 'discontinued', 'data.reason': 'screen_failure', updated_by: user.id } });
   }
+  tx.notify({ type: 'participant', uid, module: id, kind: 'locked' });
   await touch(tx, uid);
   return loadOne(tx, user, uid);
 }
@@ -379,6 +383,7 @@ export async function reopenModule(tx: Tx, user: ActingUser, uid: string, id: Mo
 
   await tx.insertOne('module_edit_reasons', { participant_uid: uid, module_id: id, at: new Date(), user_id: user.id, by_name: user.name, role: user.roleLabel, reason });
   await tx.updateOne('crf_modules', { _id: moduleId(uid, id) }, { $set: { editing: true, updated_by: user.id } });
+  tx.notify({ type: 'participant', uid, module: id, kind: 'reopened' });
   await touch(tx, uid);
   return loadOne(tx, user, uid);
 }
@@ -393,6 +398,7 @@ export async function discontinue(tx: Tx, user: ActingUser, uid: string, reasonR
 
   await tx.updateOne('participants', { _id: uid as never }, { $set: { discontinuation_requested: true } });
   await tx.updateOne('crf_modules', { _id: moduleId(uid, 10) }, { $set: { 'data.status': 'discontinued', 'data.reason': reason, updated_by: user.id } });
+  tx.notify({ type: 'participant', uid, module: 10, kind: 'discontinued' });
   await touch(tx, uid);
   return loadOne(tx, user, uid);
 }

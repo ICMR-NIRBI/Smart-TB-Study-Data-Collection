@@ -141,6 +141,7 @@ export async function changeRole(tx: Tx, actor: { id: string }, id: string, rawR
   assertRoleCooledDown(current);
   const now = new Date();
   await tx.updateOne('app_users', { _id: id as never }, { $set: { role, role_changed_at: now, updated_at: now, updated_by: actor.id } });
+  tx.notify({ type: 'account', userId: id });
   return getStaff(tx, id);
 }
 
@@ -312,6 +313,7 @@ export async function updateStaff(tx: Tx, admin: AdminActor, id: string, body: R
   if (roleChanged) assertRoleCooledDown(current);
 
   const now = new Date();
+  tx.notify({ type: 'account', userId: id });
   await tx.updateOne('app_users', { _id: id as never }, {
     $set: { display_name: name, role, is_admin: isAdmin, updated_at: now, updated_by: admin.id, ...(roleChanged ? { role_changed_at: now } : {}) },
   });
@@ -327,6 +329,7 @@ export async function setStaffActive(tx: Tx, admin: AdminActor, id: string, acti
     if (current.isAdmin) await assertAnotherAdmin(tx, id);
   }
   await tx.updateOne('app_users', { _id: id as never }, { $set: { active, updated_at: new Date(), updated_by: admin.id } });
+  tx.notify({ type: 'account', userId: id });
   if (!active) {
     await tx.deleteMany('sessions', { user_id: id });
     await cancelSetupLinks(tx, id);
@@ -399,6 +402,7 @@ export async function setDelegations(tx: Tx, admin: AdminActor, id: string, raw:
 
   const current = await getStaff(tx, id);
   for (const d of current.delegations) {
+    tx.notify({ type: 'account', userId: id });
     if (!wanted.has(d.moduleId)) await tx.deleteOne('module_delegations', { _id: `${id}:${d.moduleId}` as never });
   }
   for (const [moduleId, expiresAt] of wanted) {

@@ -15,6 +15,7 @@ import { EditReasonSheet } from '../components/participant/EditReasonSheet';
 import { DiscontinueSheet } from '../components/participant/DiscontinueSheet';
 import { useParticipantView } from '../hooks/useParticipantView';
 import { completedCount, getCurrentModule, getStatus } from '../utils/gating';
+import { EditorsNotice } from '../components/participant/EditorsNotice';
 
 export function ParticipantView({ uid }: { uid: string }) {
   const view = useParticipantView(uid);
@@ -67,9 +68,10 @@ export function ParticipantView({ uid }: { uid: string }) {
           <div className="space-y-3 px-4 pt-4 lg:px-0 lg:pt-6">
             <ParticipantBanners participant={participant} />
             <VisitWindowChips startDate={participant.data.m4.startDate} />
+            <EditorsNotice editors={view.others} selected={view.selected} onOpen={view.selectModule} />
           </div>
           <ModuleHeader moduleId={view.selected} access={view.access} editing={view.editing} previewOnly={view.previewOnly} />
-          <div key={view.selected} className="px-4 pb-8 lg:px-0">
+          <div key={view.selected} className="px-4 pb-8 motion-safe:animate-fade-in lg:px-0">
             <ModuleRenderer
               participant={participant}
               moduleId={view.selected}

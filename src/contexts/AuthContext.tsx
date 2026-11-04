@@ -20,6 +20,8 @@ export type AuthTransition = 'signing_in' | 'signing_out' | null;
 export type AuthNotice = 'signed_out' | 'timeout' | null;
 
 export interface Session {
+  /** Account id: tells the live channel's "changed by you" from changes by others. */
+  userId: string;
   email: string;
   user: StaffUser;
   actor: Actor;
@@ -46,6 +48,8 @@ interface AuthStore {
   /** Called once the server has accepted a new password. */
   passwordChanged: () => void;
   lockoutRemaining: (email: string) => number;
+  /** Re-reads the account from the server (after its role or access changed). */
+  refreshSession: () => Promise<void>;
 }
 
 interface ServerUser {
@@ -63,6 +67,7 @@ interface ServerUser {
 
 function toSession(u: ServerUser): Session {
   return {
+    userId: u.id,
     email: u.email,
     user: { name: u.name, role: u.roleLabel },
     actor: { role: u.role, entryModules: u.entryModules, isAdmin: u.isAdmin, delegations: u.delegations },
@@ -138,6 +143,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [endLocally]);
 
   const clearNotice = useCallback(() => setNotice(null), []);
+
+  const refreshSession = useCallback(async () => {
+    try {
+      const { user } = await api<{ user: ServerUser | null }>('/api/auth/session');
+      if (user) setSession(toSession(user));
+      else if (transitionRef.current !== 'signing_out') endLocally('timeout');
+    } catch {
+      /* a failed check changes nothing */
+    }
+  }, [endLocally]);
 
   const passwordChanged = useCallback(() => setSession((s) => (s ? { ...s, mustChangePassword: false } : s)), []);
 
@@ -225,8 +240,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [session, signOut, endLocally]);
 
   const value = useMemo<AuthStore>(
-    () => ({ session, loading, transition, notice, clearNotice, signIn, signInAsTest, signOut, passwordChanged, lockoutRemaining }),
-    [session, loading, transition, notice, clearNotice, signIn, signInAsTest, signOut, passwordChanged, lockoutRemaining],
+    () => ({ session, loading, transition, notice, clearNotice, signIn, signInAsTest, signOut, passwordChanged, lockoutRemaining, refreshSession }),
+    [session, loading, transition, notice, clearNotice, signIn, signInAsTest, signOut, passwordChanged, lockoutRemaining, refreshSession],
   );
 
   return (

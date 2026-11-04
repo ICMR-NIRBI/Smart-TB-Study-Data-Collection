@@ -118,6 +118,7 @@ export async function updateRoleModules(tx: Tx, actor: { id: string; role: strin
   if (isRoleKey(key)) throw new ApiError(409, 'The built-in roles cannot be changed');
   const modules = cleanModules(raw);
   const updated = await tx.updateOne('roles', { _id: key as never, deleted_at: null }, { $set: { modules } });
+  tx.notify({ type: 'account', userId: '*' }); // everyone holding this role
   if (!updated) throw new ApiError(404, 'Role not found');
 }
 

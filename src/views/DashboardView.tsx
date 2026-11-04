@@ -4,7 +4,6 @@ import { useRouter } from 'next/navigation';
 import { ChevronRightIcon, Loader2Icon, PlusIcon, SearchIcon, UserIcon, UserPlusIcon, UsersIcon } from 'lucide-react';
 import { ParticipantCard } from '../components/dashboard/ParticipantCard';
 import { UserSheet } from '../components/dashboard/UserSheet';
-import { LoadingScreen } from '../components/auth/LoadingScreen';
 import { useCrfStore } from '../contexts/CrfStoreContext';
 import { IDLE_TIMEOUT_MIN, useAuth } from '../contexts/AuthContext';
 import { SITE_NAME } from '../data/modules';
@@ -25,7 +24,7 @@ const FILTERS: { key: Filter; label: string }[] = [
 ];
 
 export function DashboardView() {
-  const { participants, loading, loadError, reload, user, actor, enroll } = useCrfStore();
+  const { participants, loading, loadError, reload, user, actor, enroll, changes, editors, liveStatus } = useCrfStore();
   const { session, signOut } = useAuth();
   const router = useRouter();
   const [query, setQuery] = useState('');
@@ -77,7 +76,6 @@ export function DashboardView() {
     .join('')
     .toUpperCase();
 
-  if (loading) return <LoadingScreen message="Loading participant records…" />;
 
   return (
     <div className="min-h-screen w-full bg-canvas">
@@ -87,6 +85,7 @@ export function DashboardView() {
             <div className="min-w-0">
               <h1 className="text-2xl font-semibold tracking-tight text-ink">SMART-TB CRF</h1>
               <p className="truncate text-sm text-ink-muted">HRZE pharmacokinetics · {SITE_NAME}</p>
+              <LiveBadge status={liveStatus} />
             </div>
             <button
               type="button"
@@ -155,7 +154,15 @@ export function DashboardView() {
             <ChevronRightIcon className="h-4 w-4" aria-hidden="true" />
           </Link>
         )}
-        {loadError ? (
+        {loading ? (
+          <ul className="space-y-3" aria-label="Loading participants" aria-busy="true">
+            {[0, 1, 2, 3].map((i) => (
+              <li key={i}>
+                <CardSkeleton />
+              </li>
+            ))}
+          </ul>
+        ) : loadError ? (
           <div className="mt-10 flex flex-col items-center text-center" role="alert">
             <p className="font-medium text-ink">Could not load participants</p>
             <p className="text-sm text-ink-muted">{loadError}</p>
@@ -171,7 +178,7 @@ export function DashboardView() {
           <ul className="space-y-3">
             {visible.map(({ p, status }) => (
               <li key={p.uid}>
-                <ParticipantCard participant={p} status={status} />
+                <ParticipantCard participant={p} status={status} change={changes[p.uid]} editors={editors[p.uid]} />
               </li>
             ))}
           </ul>
@@ -210,5 +217,33 @@ export function DashboardView() {
         }}
       />
     </div>
+  );
+}
+
+/** Placeholder shaped like a participant card while the list loads. */
+function CardSkeleton() {
+  return (
+    <div className="rounded-2xl border border-line bg-white p-4 motion-safe:animate-pulse">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-2">
+          <div className="h-4 w-32 rounded bg-canvas" />
+          <div className="h-3 w-24 rounded bg-canvas" />
+        </div>
+        <div className="h-6 w-20 rounded-full bg-canvas" />
+      </div>
+      <div className="mt-4 h-3 w-3/5 rounded bg-canvas" />
+      <div className="mt-4 h-2 w-full rounded-full bg-canvas" />
+    </div>
+  );
+}
+
+/** Whether other people's changes arrive instantly or by checking every 30 seconds. */
+function LiveBadge({ status }: { status: 'connecting' | 'live' | 'polling' }) {
+  const live = status === 'live';
+  return (
+    <p className="mt-1 flex items-center gap-1.5 text-xs text-ink-muted" title={live ? 'Changes by others appear instantly' : 'Changes by others are checked every 30 seconds'}>
+      <span className={`h-2 w-2 shrink-0 rounded-full ${live ? 'bg-ok-600' : status === 'connecting' ? 'bg-lock-300' : 'bg-warn-600'}`} aria-hidden="true" />
+      {live ? 'Live updates on' : status === 'connecting' ? 'Connecting…' : 'Updates every 30 s'}
+    </p>
   );
 }

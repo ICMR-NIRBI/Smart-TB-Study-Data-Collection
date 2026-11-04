@@ -144,7 +144,7 @@ export function ModuleActionBar({
           </>
         ) : (
           <>
-            <CheckIcon className="h-3.5 w-3.5" aria-hidden="true" />
+            <CheckIcon className="h-3.5 w-3.5 text-ok-600 motion-safe:animate-pop" aria-hidden="true" />
             All changes saved
           </>
         )}

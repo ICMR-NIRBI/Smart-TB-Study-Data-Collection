@@ -1,3 +1,4 @@
+import { publishCommitted, type PendingEvent } from '../live';
 import { ObjectId, type ClientSession, type Db, type Document, type Filter, type FindOptions, type UpdateFilter } from 'mongodb';
 import { auditKey, diffForAudit, type AuditChange } from './audit';
 import { getClient, getDb } from './client';
@@ -18,6 +19,9 @@ export interface TxContext {
  * cannot happen. (The app's database login cannot change or delete audit entries afterwards.)
  */
 export class Tx {
+  /** Changes to announce on the live channel once the transaction commits (see server/live.ts). */
+  readonly events: PendingEvent[] = [];
+
   constructor(
     readonly session: ClientSession,
     readonly db: Db,
@@ -31,6 +35,10 @@ export class Tx {
   }
   setReason(reason: string | null) {
     this.reason = reason;
+  }
+  /** Announce a change to every open screen after commit (nothing is sent if the transaction fails). */
+  notify(e: PendingEvent) {
+    this.events.push(e);
   }
 
   // --- reading (inside the transaction's snapshot)
@@ -139,14 +147,20 @@ export class Tx {
  */
 export async function withTransaction<T>(ctx: TxContext, fn: (tx: Tx) => Promise<T>): Promise<T> {
   const session = getClient().startSession();
+  let last: Tx | null = null;
+  let result: T;
   try {
-    return (await session.withTransaction(() => fn(new Tx(session, getDb(), ctx.userId ?? null, ctx.reason ?? null)), {
+    // A retried attempt gets a fresh Tx, so only the committed attempt's events are published.
+    result = (await session.withTransaction(() => fn((last = new Tx(session, getDb(), ctx.userId ?? null, ctx.reason ?? null))), {
       readConcern: { level: 'snapshot' },
       writeConcern: { w: 'majority' },
     })) as T;
   } finally {
     await session.endSession();
   }
+  const done = last as Tx | null;
+  if (done?.events.length) void publishCommitted(done.events, done.actor).catch(() => {});
+  return result;
 }
 
 /** What read-only code needs: satisfied by a transaction (its snapshot) and by `reader` (outside one). */

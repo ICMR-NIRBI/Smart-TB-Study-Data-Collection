@@ -130,6 +130,7 @@ export async function savePhoto(
     replaced_by: null,
   };
   await tx.insertOne('crf_images', doc);
+  tx.notify({ type: 'participant', uid, module: 5, kind: 'photo' });
   return toInfo(doc);
 }
 

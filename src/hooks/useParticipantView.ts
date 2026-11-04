@@ -7,6 +7,7 @@ import { evaluateEligibility } from '../utils/clinical';
 import { getAccess, getCurrentModule, isIneligible, isPreviewOnly, isRecordLocked } from '../utils/gating';
 import { PREVIEW_MODE } from '../data/previewMode';
 import { usePreviewMode } from './usePreviewMode';
+import { usePresence } from '../contexts/useLiveSync';
 import { validateModule } from '../utils/validation';
 import type { CrfData, M10Reason, ModuleId, ModuleKey } from '../types/crf';
 
@@ -49,6 +50,10 @@ export function useParticipantView(uid: string) {
   const canComplete = canCompleteModule(actor, selected) || (editing && canReopen);
   // Demo mode only shows later modules; filling them in ahead of their turn needs a preview build (the server agrees).
   const readOnly = access === 'locked' || (access === 'complete' && !editing) || (previewOnly && (recordLocked || !PREVIEW_MODE)) || !canEnter;
+
+  // Tell others this module is open for entry here; list who else has this participant open.
+  usePresence(participant && !readOnly ? uid : null, participant && !readOnly ? selected : null);
+  const others = store.editors[uid] ?? [];
 
   const errors = useMemo(() => (participant ? validateModule(selected, participant) : {}), [participant, selected]);
   const errorCount = Object.keys(errors).length;
@@ -146,6 +151,7 @@ export function useParticipantView(uid: string) {
     readOnly,
     previewOnly,
     preview,
+    others,
     prevModule,
     nextModule,
     recordLocked,

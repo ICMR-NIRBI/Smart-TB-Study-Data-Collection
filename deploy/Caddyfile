@@ -3,13 +3,24 @@
 # Caddy obtains and renews the Let's Encrypt certificate automatically and redirects http to https.
 # The app needs COOKIE_SECURE=true and APP_BASE_URL=https://smarttb-edc.in in /opt/smarttb/.env.
 smarttb-edc.in {
-	encode gzip
+	# zstd for browsers that support it (smaller), gzip otherwise. Never the live channel: compressing a stream of
+	# server-sent events holds them back in a buffer, so updates would arrive late.
+	@compressible not path /api/live
+	encode @compressible zstd gzip
 	header {
 		# One day to start with (since 2026-11-03); raise to a year (31536000) once HTTPS has run without trouble for a few weeks.
 		Strict-Transport-Security "max-age=86400"
 		-Server
 	}
-	reverse_proxy 127.0.0.1:3000
+	# The live channel: pass each event through at once.
+	handle /api/live {
+		reverse_proxy 127.0.0.1:3000 {
+			flush_interval -1
+		}
+	}
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
 }
 
 www.smarttb-edc.in {

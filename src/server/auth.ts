@@ -240,7 +240,29 @@ export async function changeOwnPassword(user: SessionUser, currentPassword: stri
 
 /** The signed-in user for this request, or null when signed out, idle too long, or deactivated. */
 export async function getSessionUser(): Promise<SessionUser | null> {
-  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  return readSession(true);
+}
+
+/**
+ * The signed-in person without counting as activity: for the live channel and presence, which run on their own and
+ * must not keep an idle session alive (the 15-minute sign-out still applies).
+ */
+export async function peekSessionUser(): Promise<SessionUser | null> {
+  return readSession(false);
+}
+
+/** The session cookie's value, for a long-lived connection that re-checks its session later (outside the request). */
+export async function sessionToken(): Promise<string | null> {
+  return (await cookies()).get(SESSION_COOKIE)?.value ?? null;
+}
+
+/** Whether a session token is still valid, without counting as activity. */
+export async function peekSessionToken(token: string): Promise<SessionUser | null> {
+  return readSession(false, token);
+}
+
+async function readSession(touch: boolean, given?: string): Promise<SessionUser | null> {
+  const token = given ?? (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const tokenHash = hashToken(token);
   const session = await reader.findOne<SessionDoc>('sessions', { _id: tokenHash as never });
@@ -251,10 +273,10 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   const now = Date.now();
   const expired = !row.active || now - session.last_active_at.getTime() > IDLE_TIMEOUT_MS || now - session.created_at.getTime() > MAX_SESSION_MS;
   if (expired) {
-    await withTransaction({}, (tx) => tx.deleteMany('sessions', { _id: tokenHash as never }));
+    if (touch) await withTransaction({}, (tx) => tx.deleteMany('sessions', { _id: tokenHash as never }));
     return null;
   }
-  if (now - session.last_active_at.getTime() > TOUCH_EVERY_MS) {
+  if (touch && now - session.last_active_at.getTime() > TOUCH_EVERY_MS) {
     await withTransaction({}, (tx) => tx.updateOne('sessions', { _id: tokenHash as never }, { $set: { last_active_at: new Date() } }));
   }
   return toSessionUser(row);

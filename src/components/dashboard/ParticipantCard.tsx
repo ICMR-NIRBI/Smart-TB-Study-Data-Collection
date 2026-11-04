@@ -5,6 +5,7 @@ import { StatusBadge } from '../ui/StatusBadge';
 import { completedCount, getCurrentModule, getModuleDef, isRecordLocked } from '../../utils/gating';
 import { formatDMY } from '../../utils/dates';
 import type { Participant, ParticipantStatus } from '../../types/crf';
+import type { LiveChange, LiveEditor } from '../../contexts/useLiveSync';
 
 const BAR: Record<ParticipantStatus, string> = {
   in_progress: 'bg-brand-600',
@@ -13,16 +14,35 @@ const BAR: Record<ParticipantStatus, string> = {
   discontinued: 'bg-lock-500',
 };
 
-export function ParticipantCard({ participant, status }: { participant: Participant; status: ParticipantStatus }) {
+/** Recent enough to show: a change from someone else in the last few seconds. */
+const FRESH_MS = 6000;
+
+export function ParticipantCard({
+  participant,
+  status,
+  change,
+  editors = [],
+}: {
+  participant: Participant;
+  status: ParticipantStatus;
+  /** Latest live change to this participant: someone else's highlights the card for a moment. */
+  change?: LiveChange;
+  /** Others with one of its modules open right now. */
+  editors?: LiveEditor[];
+}) {
   const done = completedCount(participant);
   const next = getModuleDef(getCurrentModule(participant));
   const closed = isRecordLocked(participant);
   const m1 = participant.data.m1;
 
+  const fresh = !!change && !change.mine && Date.now() - change.at < FRESH_MS;
+  const motion = fresh ? (change.kind === 'created' ? 'motion-safe:animate-slide-in' : 'motion-safe:animate-flash') : '';
+
   return (
     <Link
+      key={fresh ? change.at : 'still'}
       href={`/p/${participant.uid}`}
-      className="group block rounded-2xl border border-line bg-white p-4 transition-[border-color,box-shadow] duration-150 hover:border-brand-200 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+      className={`group block rounded-2xl border border-line bg-white p-4 transition-[border-color,box-shadow] duration-150 hover:border-brand-200 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 ${motion}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -52,10 +72,26 @@ export function ParticipantCard({ participant, status }: { participant: Particip
           aria-valuenow={done}
           aria-label="Modules completed"
         >
-          <div className={`h-full rounded-full ${BAR[status]}`} style={{ width: `${(done / 10) * 100}%` }} />
+          <div className={`h-full rounded-full ${BAR[status]} motion-safe:transition-[width] motion-safe:duration-700 motion-safe:ease-out`} style={{ width: `${(done / 10) * 100}%` }} />
         </div>
         <span className="text-sm font-semibold tabular-nums text-ink-soft">{done}/10</span>
       </div>
+      {editors.length > 0 && (
+        <p className="mt-2 flex items-center gap-2 text-xs font-medium text-brand-700">
+          <span className="relative flex h-2 w-2 shrink-0" aria-hidden="true">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-brand-500 opacity-60 motion-safe:animate-ping" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-brand-600" />
+          </span>
+          <span className="truncate">
+            {editors.map((e) => `${e.name} (Module ${e.module})`).join(', ')} {editors.length === 1 ? 'is' : 'are'} working on this now
+          </span>
+        </p>
+      )}
+      {fresh && change.by && (
+        <p className="mt-1 truncate text-xs text-ink-muted">
+          Just {change.kind === 'created' ? 'enrolled' : change.kind === 'locked' ? `locked Module ${change.module}` : 'updated'} by {change.by}
+        </p>
+      )}
     </Link>
   );
 }

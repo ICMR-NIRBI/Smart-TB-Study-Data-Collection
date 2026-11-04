@@ -4,6 +4,19 @@ const config: Config = {
   content: ['./src/**/*.{ts,tsx}'],
   theme: {
     extend: {
+      // Short, quiet motion for live updates; every use is under motion-safe: so "reduce motion" turns it off.
+      keyframes: {
+        flash: { '0%': { backgroundColor: '#d3ebee', boxShadow: '0 0 0 2px #a6d5db' }, '100%': { backgroundColor: '#ffffff', boxShadow: '0 0 0 0 transparent' } },
+        'slide-in': { '0%': { opacity: '0', transform: 'translateY(-8px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+        'fade-in': { '0%': { opacity: '0', transform: 'translateY(4px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+        pop: { '0%': { transform: 'scale(0.6)' }, '60%': { transform: 'scale(1.15)' }, '100%': { transform: 'scale(1)' } },
+      },
+      animation: {
+        flash: 'flash 1.8s ease-out',
+        'slide-in': 'slide-in 0.3s ease-out',
+        'fade-in': 'fade-in 0.25s ease-out',
+        pop: 'pop 0.35s ease-out',
+      },
       fontFamily: {
         sans: ['var(--font-inter)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         serif: ['var(--font-serif)', 'ui-serif', 'Georgia', 'serif'],
