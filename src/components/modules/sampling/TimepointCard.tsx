@@ -20,7 +20,7 @@ interface TimepointCardProps {
   onChange: (patch: Partial<TimepointEntry>) => void;
   /** The participant, for attaching photos. */
   uid: string;
-  photos: { blood?: PhotoInfo; plasma?: PhotoInfo };
+  photos: { blood: PhotoInfo[]; plasma: PhotoInfo[] };
   onPhotoSaved: (photo: PhotoInfo) => void;
 }
 
@@ -142,7 +142,7 @@ export function TimepointCard({ def, entry, t0, readOnly, errors, onChange, uid,
                         readOnly={readOnly}
                         error={errors[`${prefix}.bloodImg`]}
                       />
-                      <PhotoSlot uid={uid} timepoint={def.key} kind="blood" imageId={entry.bloodImg} photo={photos.blood} readOnly={readOnly} onSaved={onPhotoSaved} />
+                      <PhotoSlot uid={uid} timepoint={def.key} kind="blood" imageId={entry.bloodImg} photos={photos.blood} readOnly={readOnly} onSaved={onPhotoSaved} />
                     </div>
                     <CheckToggle label="Plasma separated" description="Immediately after collection" checked={entry.plasma} onChange={(v) => onChange({ plasma: v })} readOnly={readOnly} />
                     <div className="min-w-0">
@@ -158,7 +158,7 @@ export function TimepointCard({ def, entry, t0, readOnly, errors, onChange, uid,
                         readOnly={readOnly}
                         error={errors[`${prefix}.plasmaImg`]}
                       />
-                      <PhotoSlot uid={uid} timepoint={def.key} kind="plasma" imageId={entry.plasmaImg} photo={photos.plasma} readOnly={readOnly} onSaved={onPhotoSaved} />
+                      <PhotoSlot uid={uid} timepoint={def.key} kind="plasma" imageId={entry.plasmaImg} photos={photos.plasma} readOnly={readOnly} onSaved={onPhotoSaved} />
                     </div>
                     <CheckToggle
                       label="Rifampicin stabilizer added"

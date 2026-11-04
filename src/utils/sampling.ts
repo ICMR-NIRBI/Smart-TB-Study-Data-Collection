@@ -3,6 +3,8 @@ import { isValidTime } from './dates';
 import type { M5Data, TimepointEntry } from '../types/crf';
 
 export const IMAGE_ID_PATTERN = /^\d{4}$/;
+/** Photos per image ID: up to 4 blood-drop and 4 plasma-vial photos per blood timepoint, numbered 1–4 (all optional). */
+export const PHOTOS_PER_KIND = 4;
 
 export function imagePrefix(kind: 'BL' | 'PL', hours: number): string {
   return `IMG-${kind}-${String(hours).padStart(2, '0')}-`;

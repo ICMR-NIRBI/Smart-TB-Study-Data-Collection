@@ -56,12 +56,13 @@ const pk = await make('pk', 'pk_scientist');
 // Small pictures: only the first bytes decide the type.
 const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(`test-${stamp}-jpeg`), Buffer.from([0xff, 0xd9])]);
 const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from(`test-${stamp}-png`)]);
-const upload = (c, uid, { bytes = jpeg, timepoint = '0', kind = 'blood', imageId = '0042', type = 'image/jpeg' } = {}) => {
+const upload = (c, uid, { bytes = jpeg, timepoint = '0', kind = 'blood', imageId = '0042', type = 'image/jpeg', shot } = {}) => {
   const form = new FormData();
   form.append('file', new Blob([bytes], { type }), 'photo.jpg');
   form.append('timepoint', timepoint);
   form.append('kind', kind);
   form.append('imageId', imageId);
+  if (shot !== undefined) form.append('shot', String(shot));
   return c(`/api/participants/${uid}/images`, { method: 'POST', form });
 };
 
@@ -154,6 +155,34 @@ current = (await ph(`/api/participants/${uid}/images`)).json.photos;
 check('an unfinished ID on the form leaves the photo without one (never a wrong one)', current.find((p) => p.kind === 'blood')?.imageId === '', JSON.stringify(current));
 await setIds({ 0: { bloodImg: '0777' } });
 
+// --- up to 4 numbered photos of each kind per timepoint, all under one image ID
+const shotPic = (n) => Buffer.concat([jpeg, Buffer.from(`shot-${n}`)]);
+r = await upload(ph, uid, { timepoint: '2', kind: 'plasma', imageId: '0302', shot: 0, bytes: shotPic(0) });
+check('photo number 0 is refused', r.status === 400, `${r.status}`);
+r = await upload(ph, uid, { timepoint: '2', kind: 'plasma', imageId: '0302', shot: 5, bytes: shotPic(5) });
+check('so is photo number 5', r.status === 400, `${r.status}`);
+for (const n of [1, 2, 3, 4]) {
+  r = await upload(ph, uid, { timepoint: '2', kind: 'plasma', imageId: '0302', shot: n, bytes: shotPic(n) });
+  check(`photo ${n} of 4 is stored`, r.status === 200 && r.json.photo?.shot === n && r.json.photo.imageId === '0302', `${r.status} ${JSON.stringify(r.json).slice(0, 160)}`);
+}
+let at2 = (await ph(`/api/participants/${uid}/images`)).json.photos.filter((p) => p.timepoint === '2' && p.kind === 'plasma');
+check('all four are listed, in order', at2.map((p) => p.shot).join(',') === '1,2,3,4', JSON.stringify(at2.map((p) => p.shot)));
+const third = at2.find((p) => p.shot === 3);
+r = await upload(ph, uid, { timepoint: '2', kind: 'plasma', imageId: '0302', shot: 3, bytes: shotPic('3b') });
+at2 = (await ph(`/api/participants/${uid}/images`)).json.photos.filter((p) => p.timepoint === '2' && p.kind === 'plasma');
+check('replacing photo 3 leaves photos 1, 2 and 4 alone', r.status === 200 && at2.length === 4 && !at2.some((p) => p.id === third.id) && at2.find((p) => p.shot === 3)?.id === r.json.photo.id, JSON.stringify(at2.map((p) => [p.shot, p.id.slice(0, 6)])));
+check('the old photo 3 stays on record as replaced', !!(await db.photos(uid)).find((p) => p._id === third.id)?.replaced_at);
+r = await setIds({ 2: { plasmaImg: '0399' } });
+at2 = (await ph(`/api/participants/${uid}/images`)).json.photos.filter((p) => p.timepoint === '2' && p.kind === 'plasma');
+check('changing the image ID on the form moves all four photos with it', r.status === 200 && at2.length === 4 && at2.every((p) => p.imageId === '0399'), JSON.stringify(at2.map((p) => p.imageId)));
+const before1 = (await ph(`/api/participants/${uid}/images`)).json.photos.find((p) => p.timepoint === '0' && p.kind === 'blood');
+check('photos sent without a number count as photo 1', before1?.shot === 1, JSON.stringify(before1));
+r = await upload(ph, uid, { timepoint: '0', kind: 'blood', imageId: '0777', shot: 2, bytes: shotPic('0-2') });
+const at0 = (await ph(`/api/participants/${uid}/images`)).json.photos.filter((p) => p.timepoint === '0' && p.kind === 'blood');
+check('adding photo 2 keeps the earlier photo 1', r.status === 200 && at0.length === 2 && at0.some((p) => p.id === before1.id), JSON.stringify(at0.map((p) => [p.shot, p.id.slice(0, 6)])));
+r = await pk(`/api/images/${at2[1].id}`);
+check('each numbered photo downloads with its number in the name', r.status === 200 && /0399-2\.jpg/.test(r.headers.get('content-disposition') ?? ''), r.headers.get('content-disposition'));
+
 // --- a real camera-sized photo (6 MP JPEG) is kept exactly as taken; the list shows a small preview
 const camera = await sharp({ create: { width: 3000, height: 2000, channels: 3, background: '#7a1f2b' } })
   .composite([{ input: Buffer.from('<svg width="3000" height="2000"><circle cx="1500" cy="1000" r="700" fill="#e8c9b0"/></svg>') }])
@@ -183,7 +212,7 @@ await db.completeModules(uid, [5]);
 r = await upload(ph, uid, { timepoint: '1' });
 check('no new photos once Module 5 is locked', r.status === 409, `${r.status} ${JSON.stringify(r.json)}`);
 r = await pk(`/api/participants/${uid}/images`);
-check('but they can still be seen', r.status === 200 && r.json.photos?.length === 3, `${r.status}`);
+check('but they can still be seen', r.status === 200 && r.json.photos?.length === 8, `${r.status} ${r.json.photos?.length}`);
 
 await db.close();
 console.log(`\n${pass} passed, ${fail} failed`);

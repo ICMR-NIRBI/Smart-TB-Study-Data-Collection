@@ -1,14 +1,16 @@
-import React, { useRef, useState } from 'react';
-import { CameraIcon, Loader2Icon, UploadIcon } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { CameraIcon, ExternalLinkIcon, Loader2Icon, PlusIcon, UploadIcon } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { UNAUTHORIZED_EVENT } from '../../../utils/api';
 import { formatTimestamp } from '../../../utils/dates';
-import { IMAGE_ID_PATTERN } from '../../../utils/sampling';
+import { IMAGE_ID_PATTERN, PHOTOS_PER_KIND } from '../../../utils/sampling';
 
 export interface PhotoInfo {
   id: string;
   timepoint: string;
   kind: 'blood' | 'plasma';
+  /** 1-4: which of this kind's photos at the timepoint. */
+  shot: number;
   imageId: string;
   bytes: number;
   uploadedBy: string;
@@ -19,9 +21,10 @@ interface PhotoSlotProps {
   uid: string;
   timepoint: string;
   kind: 'blood' | 'plasma';
-  /** The 4-digit image ID typed for this photo, stored with it for cross-checking. */
+  /** The 4-digit image ID typed for this kind; every photo of it is filed under that ID. */
   imageId: string;
-  photo: PhotoInfo | undefined;
+  /** The current photos of this kind at this timepoint (up to PHOTOS_PER_KIND, numbered by `shot`). */
+  photos: PhotoInfo[];
   readOnly: boolean;
   onSaved: (photo: PhotoInfo) => void;
 }
@@ -59,8 +62,12 @@ function postWithProgress(url: string, form: FormData, onProgress: (fraction: nu
   });
 }
 
-/** Attach or replace the photo for one blood or plasma image of a timepoint. */
-export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSaved }: PhotoSlotProps) {
+/**
+ * Up to PHOTOS_PER_KIND (4) photos of one kind (blood drop or plasma vial) at a timepoint, all under its image ID.
+ * Four numbered tiles: tap one to choose it, then Take photo / Upload fills it (or replaces what is there). The first
+ * empty tile is chosen to begin with, so taking photos one after another just fills 1, 2, 3, 4. All are optional.
+ */
+export function PhotoSlot({ uid, timepoint, kind, imageId, photos, readOnly, onSaved }: PhotoSlotProps) {
   const camera = useRef<HTMLInputElement>(null);
   const file = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -70,19 +77,31 @@ export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSa
   const what = kind === 'blood' ? 'blotting-paper blood photo' : 'plasma light-box photo';
   // A photo is always filed under its image ID, so the ID comes first.
   const idReady = IMAGE_ID_PATTERN.test(imageId);
+  const byShot = new Map(photos.map((ph) => [ph.shot, ph]));
+  const shots = Array.from({ length: PHOTOS_PER_KIND }, (_, i) => i + 1);
+  const firstEmpty = shots.find((n) => !byShot.has(n)) ?? null;
+  const [chosen, setChosen] = useState<number>(firstEmpty ?? 1);
+  const [picked, setPicked] = useState(false);
+  // Until someone taps a tile, keep pointing at the next empty one (also after each upload).
+  useEffect(() => {
+    if (!picked) setChosen(firstEmpty ?? 1);
+  }, [firstEmpty, picked]);
+  const current = byShot.get(chosen);
 
-  const upload = async (picked: File) => {
+  const upload = async (pickedFile: File) => {
+    const shot = chosen;
     setBusy(true);
     setError(null);
     setStage('uploading');
     setSent(0);
     try {
-      if (picked.size > MAX_UPLOAD_BYTES) throw new Error('The photo is too large (20 MB at most)');
+      if (pickedFile.size > MAX_UPLOAD_BYTES) throw new Error('The photo is too large (20 MB at most)');
       const form = new FormData();
       // The original camera file, byte for byte (the protocol asks for full-resolution JPEGs).
-      form.append('file', picked, picked.name || 'photo.jpg');
+      form.append('file', pickedFile, pickedFile.name || 'photo.jpg');
       form.append('timepoint', timepoint);
       form.append('kind', kind);
+      form.append('shot', String(shot));
       form.append('imageId', imageId);
       const res = await postWithProgress(`/api/participants/${encodeURIComponent(uid)}/images`, form, (fraction) => {
         setSent(fraction);
@@ -91,6 +110,7 @@ export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSa
       const json = res.json;
       if (res.status === 401) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
       if (res.status < 200 || res.status >= 300 || !json.photo) throw new Error(json.error ?? `Upload failed (${res.status})`);
+      setPicked(false); // move on to the next empty tile
       onSaved(json.photo);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
@@ -102,43 +122,84 @@ export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSa
   };
 
   const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) void upload(file);
+    const f = e.target.files?.[0];
+    if (f) void upload(f);
   };
   const spinner = <Loader2Icon className="h-4 w-4 animate-spin" aria-hidden="true" />;
 
   return (
     <div className="mt-2 min-w-0 space-y-2">
-      <div className="flex min-w-0 items-center gap-3">
-        {photo ? (
-          <a
-            href={`/api/images/${photo.id}`}
-            target="_blank"
-            rel="noopener"
-            className="block h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-line bg-canvas focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
-            aria-label={`Open the ${what} full size`}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element -- a private, signed-in image; not for the image optimiser */}
-            <img src={`/api/images/${photo.id}?size=thumb`} alt={`${what}, ${timepoint} h`} className="h-full w-full object-cover" />
-          </a>
-        ) : null}
-        <div className="min-w-0 flex-1 text-xs text-ink-muted">
-          {photo ? (
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="font-medium text-ink-soft">
+          Photos <span className="tabular-nums">{photos.length}/{PHOTOS_PER_KIND}</span>
+        </span>
+        {photos.length > 0 && <span className="text-ink-muted">optional</span>}
+      </div>
+      <div className="grid grid-cols-4 gap-2" role="group" aria-label={`${what}s, ${timepoint} h`}>
+        {shots.map((n) => {
+          const ph = byShot.get(n);
+          const isChosen = !readOnly && n === chosen;
+          const cls = `relative block aspect-square w-full overflow-hidden rounded-lg border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 ${
+            isChosen ? 'border-brand-600 ring-2 ring-brand-600/30' : ph ? 'border-line' : 'border-dashed border-line-strong'
+          } ${ph ? 'bg-canvas' : 'bg-white'}`;
+          const inner = ph ? (
             <>
-              <p className="font-medium text-ok-700">Photo attached</p>
-              <p className="break-words">
-                {photo.uploadedBy} · {formatTimestamp(photo.uploadedAt)}
-              </p>
+              {/* eslint-disable-next-line @next/next/no-img-element -- a private, signed-in image; not for the image optimiser */}
+              <img src={`/api/images/${ph.id}?size=thumb`} alt={`${what} ${n}, ${timepoint} h`} className="h-full w-full object-cover" />
+              <span className="absolute bottom-0.5 left-0.5 rounded bg-ink/75 px-1 text-[10px] font-semibold tabular-nums text-white">{n}</span>
             </>
           ) : (
-            // While the first photo goes up, the progress bar below says what is happening.
-            !busy && <p>{readOnly ? 'No photo attached' : 'No photo yet'}</p>
-          )}
-        </div>
+            <span className="flex h-full w-full flex-col items-center justify-center text-ink-muted">
+              {!readOnly && <PlusIcon className="h-4 w-4" aria-hidden="true" />}
+              <span className="text-[11px] font-semibold tabular-nums">{n}</span>
+            </span>
+          );
+          // Read-only: a filled tile opens the photo; editing: a tile chooses which photo the buttons below fill.
+          return readOnly ? (
+            ph ? (
+              <a key={n} href={`/api/images/${ph.id}`} target="_blank" rel="noopener" className={cls} aria-label={`Open ${what} ${n} full size`}>
+                {inner}
+              </a>
+            ) : (
+              <div key={n} className={cls} aria-label={`No ${what} ${n}`}>
+                {inner}
+              </div>
+            )
+          ) : (
+            <button
+              key={n}
+              type="button"
+              className={cls}
+              aria-pressed={isChosen}
+              aria-label={ph ? `Photo ${n}: choose to replace it` : `Photo ${n}: empty, choose to add it`}
+              onClick={() => {
+                setChosen(n);
+                setPicked(true);
+              }}
+              disabled={busy}
+            >
+              {inner}
+            </button>
+          );
+        })}
       </div>
+      {!readOnly && (
+        <p className="min-w-0 break-words text-xs text-ink-muted">
+          {current ? (
+            <>
+              Photo {chosen}: {current.uploadedBy} · {formatTimestamp(current.uploadedAt)} ·{' '}
+              <a href={`/api/images/${current.id}`} target="_blank" rel="noopener" className="inline-flex items-center gap-0.5 font-medium text-brand-700 underline-offset-2 hover:underline">
+                open <ExternalLinkIcon className="h-3 w-3" aria-hidden="true" />
+              </a>
+            </>
+          ) : (
+            `Photo ${chosen} is empty`
+          )}
+        </p>
+      )}
       {busy && <UploadProgress stage={stage} fraction={sent} what={what} />}
       {!readOnly && !busy && !idReady && (
-        <p className="text-xs text-warn-700">{photo ? 'Enter the 4-digit image ID above; the photo is filed under it.' : 'Enter the 4-digit image ID above to add the photo.'}</p>
+        <p className="text-xs text-warn-700">{photos.length ? 'Enter the 4-digit image ID above; the photos are filed under it.' : 'Enter the 4-digit image ID above to add photos.'}</p>
       )}
       {!readOnly && (
         // Two ways in: the camera, or a picture already on the phone or computer. They wrap onto two lines on very
@@ -151,9 +212,9 @@ export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSa
             icon={busy ? spinner : <CameraIcon className="h-4 w-4" aria-hidden="true" />}
             onClick={() => camera.current?.click()}
             disabled={busy || !idReady}
-            aria-label={photo ? `Take a new ${what}` : `Take the ${what}`}
+            aria-label={current ? `Retake ${what} ${chosen}` : `Take ${what} ${chosen}`}
           >
-            {photo ? 'Retake' : 'Take photo'}
+            {current ? `Retake ${chosen}` : `Take photo ${chosen}`}
           </Button>
           <Button
             variant="secondary"
@@ -162,9 +223,9 @@ export function PhotoSlot({ uid, timepoint, kind, imageId, photo, readOnly, onSa
             icon={busy ? spinner : <UploadIcon className="h-4 w-4" aria-hidden="true" />}
             onClick={() => file.current?.click()}
             disabled={busy || !idReady}
-            aria-label={photo ? `Upload a different ${what}` : `Upload the ${what} from this device`}
+            aria-label={current ? `Replace ${what} ${chosen} from this device` : `Upload ${what} ${chosen} from this device`}
           >
-            {photo ? 'Upload new' : 'Upload'}
+            {current ? `Replace ${chosen}` : 'Upload'}
           </Button>
         </div>
       )}

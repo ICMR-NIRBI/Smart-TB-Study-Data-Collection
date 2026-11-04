@@ -13,7 +13,7 @@ import { MEALS, TIMEPOINTS } from '../../data/timepoints';
 import { YES_NO } from '../../data/options';
 import { fastingHours, fmt } from '../../utils/clinical';
 import { addHoursToTime, daysBetween, nowTime } from '../../utils/dates';
-import { sampleCounters } from '../../utils/sampling';
+import { PHOTOS_PER_KIND, sampleCounters } from '../../utils/sampling';
 import { hasErrorIn } from '../../utils/validation';
 import type { M5Data, ModuleProps, TimepointEntry } from '../../types/crf';
 
@@ -36,9 +36,9 @@ export function Module5PkSampling({ participant, data, update, readOnly, errors 
   useEffect(() => {
     void loadPhotos();
   }, [loadPhotos]);
-  const photoFor = (tp: string, kind: PhotoInfo['kind']) => photos.find((p) => p.timepoint === tp && p.kind === kind);
+  const photoFor = (tp: string, kind: PhotoInfo['kind']) => photos.filter((p) => p.timepoint === tp && p.kind === kind);
   const onPhotoSaved = (photo: PhotoInfo) =>
-    setPhotos((cur) => [...cur.filter((p) => !(p.timepoint === photo.timepoint && p.kind === photo.kind)), photo]);
+    setPhotos((cur) => [...cur.filter((p) => !(p.timepoint === photo.timepoint && p.kind === photo.kind && p.shot === photo.shot)), photo]);
 
   const updateTp = (key: string, patch: Partial<TimepointEntry>) =>
     update({ timepoints: { ...data.timepoints, [key]: { ...data.timepoints[key], ...patch } } });
@@ -47,7 +47,7 @@ export function Module5PkSampling({ participant, data, update, readOnly, errors 
     { label: 'Blood', value: counters.blood, total: counters.bloodTotal },
     { label: 'Saliva', value: counters.saliva, total: counters.salivaTotal },
     { label: 'Images', value: counters.images, total: counters.imagesTotal },
-    { label: 'Photos', value: photos.length, total: counters.imagesTotal },
+    { label: 'Photos', value: photos.length, total: counters.imagesTotal * PHOTOS_PER_KIND },
   ];
 
   return (
@@ -145,7 +145,7 @@ export function Module5PkSampling({ participant, data, update, readOnly, errors 
           <div>
             <dt className="font-semibold text-ink">Images</dt>
             <dd className="text-ink-soft">
-              Photograph a whole-blood drop on standardized blotting paper (IMG-BL) and the plasma vial against the calibrated light box (IMG-PL).
+              Photograph a whole-blood drop on standardized blotting paper (IMG-BL) and the plasma vial against the calibrated light box (IMG-PL). Up to {PHOTOS_PER_KIND} photos of each per timepoint, all under the same image ID; extra photos are optional.
             </dd>
           </div>
           <div>

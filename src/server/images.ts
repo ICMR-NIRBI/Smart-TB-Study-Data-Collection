@@ -5,11 +5,13 @@ import { ApiError } from './errors';
 import type { Reads, Tx } from './mongo/tx';
 import { assertModuleEditable, type ActingUser } from './participants';
 import { TIMEPOINTS } from '../data/timepoints';
-import { IMAGE_ID_PATTERN } from '../utils/sampling';
+import { IMAGE_ID_PATTERN, PHOTOS_PER_KIND } from '../utils/sampling';
 
 /*
- * Module 5 photographs: the blood drop on blotting paper and the plasma vial against the light box, one of each per
- * blood timepoint (18 per participant, as the CRF counts them). The picture files are kept on disk, outside the
+ * Module 5 photographs: the blood drop on blotting paper and the plasma vial against the light box. Each blood timepoint
+ * takes up to PHOTOS_PER_KIND (4) of each, numbered 1-4 (`shot`) and all filed under the timepoint's one image ID, as on
+ * the paper CRF: up to 72 per participant. Photos are optional; locking Module 5 does not depend on them. Records
+ * from before numbering have no `shot` and count as photo 1. The picture files are kept on disk, outside the
  * database (they would make every hourly database backup large); the database keeps a record of each one. Files are
  * named by their content (SHA-256), never changed and never deleted: a replaced photo stays on record.
  * Backups: deploy/backup.sh archives new photos every hour, separately from the database dump.
@@ -26,6 +28,8 @@ export interface PhotoInfo {
   id: string;
   timepoint: string;
   kind: PhotoKind;
+  /** 1-4: which of the timepoint's photos of this kind. */
+  shot: number;
   imageId: string;
   bytes: number;
   uploadedBy: string;
@@ -38,6 +42,8 @@ interface ImageDoc {
   module_id: number;
   timepoint: string;
   kind: PhotoKind;
+  /** 1-4; missing on records from before photos were numbered (= 1). */
+  shot?: number;
   image_id: string;
   file: string;
   sha256: string;
@@ -64,32 +70,37 @@ const toInfo = (d: ImageDoc): PhotoInfo => ({
   id: d._id,
   timepoint: d.timepoint,
   kind: d.kind,
+  shot: d.shot ?? 1,
   imageId: d.image_id,
   bytes: d.bytes,
   uploadedBy: d.uploaded_by_name,
   uploadedAt: d.uploaded_at.toISOString(),
 });
 
-/** The current photo for each timepoint and kind (replaced ones are left out). */
+/** The current photos of a participant, by timepoint, kind and number (replaced ones are left out). */
 export async function listPhotos(q: Reads, uid: string): Promise<PhotoInfo[]> {
   const docs = await q.find<ImageDoc>('crf_images', { participant_uid: uid, replaced_at: null }, { sort: { timepoint: 1, kind: 1 } });
-  return docs.map(toInfo);
+  return docs.map(toInfo).sort((a, b) => a.timepoint.localeCompare(b.timepoint) || a.kind.localeCompare(b.kind) || a.shot - b.shot);
 }
 
 /**
- * Attaches a photo to a timepoint. Allowed only to someone who may fill in Module 5 while it is open (the same rule as
- * typing in it). A photo already there is kept on record as replaced.
+ * Attaches photo `shot` (1-4) of a kind to a timepoint. Allowed only to someone who may fill in Module 5 while it is
+ * open (the same rule as typing in it). A photo already in that numbered place is kept on record as replaced; the
+ * timepoint's other photos are untouched.
  */
 export async function savePhoto(
   tx: Tx,
   user: ActingUser,
   uid: string,
-  input: { timepoint: unknown; kind: unknown; imageId: unknown; bytes: Buffer },
+  input: { timepoint: unknown; kind: unknown; shot?: unknown; imageId: unknown; bytes: Buffer },
 ): Promise<PhotoInfo> {
   const timepoint = typeof input.timepoint === 'string' ? input.timepoint : '';
   if (!TIMEPOINTS.some((t) => t.key === timepoint && !t.salivaOnly)) throw new ApiError(400, 'Choose a blood sampling timepoint');
   const kind = PHOTO_KINDS.find((k) => k === input.kind);
   if (!kind) throw new ApiError(400, 'Say whether this is the blood or the plasma photo');
+  // Older screens send no number: that is photo 1, as before.
+  const shot = input.shot === undefined || input.shot === null || input.shot === '' ? 1 : Number(input.shot);
+  if (!Number.isInteger(shot) || shot < 1 || shot > PHOTOS_PER_KIND) throw new ApiError(400, `Choose photo 1 to ${PHOTOS_PER_KIND}`);
   // Every photo is filed under its 4-digit image ID (kept in step with the form afterwards: participants.ts).
   const imageId = typeof input.imageId === 'string' ? input.imageId : '';
   if (!IMAGE_ID_PATTERN.test(imageId)) throw new ApiError(400, 'Enter the 4-digit image ID before adding the photo');
@@ -111,13 +122,15 @@ export async function savePhoto(
   await rename(tmp, join(uploadDir(), file));
 
   const now = new Date();
-  await tx.updateMany('crf_images', { participant_uid: uid, timepoint, kind, replaced_at: null }, { $set: { replaced_at: now, replaced_by: user.id } });
+  const place = shot === 1 ? { $or: [{ shot: 1 }, { shot: { $exists: false } }] } : { shot };
+  await tx.updateMany('crf_images', { participant_uid: uid, timepoint, kind, replaced_at: null, ...place }, { $set: { replaced_at: now, replaced_by: user.id } });
   const doc: ImageDoc = {
     _id: randomUUID(),
     participant_uid: uid,
     module_id: 5,
     timepoint,
     kind,
+    shot,
     image_id: imageId,
     file,
     sha256,
@@ -142,7 +155,7 @@ export async function savePhoto(
 export async function readPhoto(q: Reads, id: string, opts: { thumb?: boolean } = {}): Promise<{ bytes: Buffer; mime: string; name: string }> {
   const doc = await q.findOne<ImageDoc>('crf_images', { _id: id as never });
   if (!doc) throw new ApiError(404, 'Photo not found');
-  const name = `${doc.participant_uid}-${doc.timepoint}h-${doc.kind}-${doc.image_id || 'noid'}`;
+  const name = `${doc.participant_uid}-${doc.timepoint}h-${doc.kind}-${doc.image_id || 'noid'}-${doc.shot ?? 1}`;
   let bytes: Buffer;
   try {
     bytes = await readFile(join(uploadDir(), doc.file));
